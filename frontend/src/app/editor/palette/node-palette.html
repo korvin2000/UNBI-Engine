@@ -1,0 +1,83 @@
+<header class="panel-head">
+  <span class="panel-head__tab is-active">Nodes</span>
+</header>
+
+<div class="search">
+  <app-icon class="search__icon" name="search" [size]="14" />
+  <input
+    class="search__input"
+    type="search"
+    placeholder="Search…"
+    [value]="query()"
+    (input)="onSearch($event)"
+    aria-label="Search nodes"
+  />
+  @if (isSearching()) {
+    <button class="search__clear" type="button" (click)="clearSearch()" aria-label="Clear search">×</button>
+  }
+</div>
+
+@if (isSearching()) {
+  <p class="result-count">{{ matchCount() }} {{ matchCount() === 1 ? 'match' : 'matches' }}</p>
+}
+
+<div class="scroller">
+  @switch (state()) {
+    @case ('loading') {
+      <p class="notice">Loading nodes…</p>
+    }
+    @case ('failed') {
+      <div class="notice notice--error">
+        <app-icon name="warning" [size]="18" />
+        <p>Could not reach the engine.</p>
+        <p class="notice__detail">{{ loadError() }}</p>
+        <button class="notice__retry" type="button" (click)="retry()">Try again</button>
+      </div>
+    }
+    @default {
+      @for (group of groups(); track group.name) {
+        <section class="category" [class]="'accent-' + group.accent">
+          <button class="category__head" type="button" (click)="toggle(group.name)">
+            <app-icon class="category__icon" [name]="group.icon" [size]="15" />
+            <span class="category__name">{{ group.name }}</span>
+            <app-icon
+              class="category__chevron"
+              [class.is-collapsed]="isCollapsed(group.name)"
+              name="chevron"
+              [size]="14"
+            />
+          </button>
+
+          @if (!isCollapsed(group.name)) {
+            <div class="category__body">
+              @for (section of group.sections; track section.name) {
+                @if (section.name) {
+                  <div class="section-label"><span>{{ section.name }}</span></div>
+                }
+
+                @for (spec of section.nodes; track spec.id) {
+                  <button
+                    class="entry"
+                    type="button"
+                    fExternalItem
+                    [fData]="spec.id"
+                    [attr.title]="spec.description || spec.label"
+                    (dblclick)="addAtDefaultPosition(spec)"
+                  >
+                    <span class="entry__bar"></span>
+                    <app-icon class="entry__icon" [name]="spec.icon" [size]="13" />
+                    <span class="entry__label">{{ spec.label }}</span>
+                  </button>
+                }
+              }
+            </div>
+          }
+        </section>
+      } @empty {
+        <p class="notice">No nodes match “{{ query() }}”.</p>
+      }
+    }
+  }
+</div>
+
+<footer class="panel-foot">Drag onto the canvas, or double-click to add</footer>

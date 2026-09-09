@@ -1,0 +1,135 @@
+@let widget = spec();
+
+@switch (widget.kind) {
+  @case ('text') {
+    @if (widget.multiline) {
+      <textarea
+        class="field field--area"
+        rows="3"
+        [attr.placeholder]="widget.placeholder"
+        [value]="text()"
+        [disabled]="disabled()"
+        (input)="onText($event)"
+        fDragBlocker
+      ></textarea>
+    } @else {
+      <input
+        class="field"
+        type="text"
+        [attr.placeholder]="widget.placeholder"
+        [value]="text()"
+        [disabled]="disabled()"
+        (input)="onText($event)"
+        fDragBlocker
+      />
+    }
+  }
+
+  @case ('number') {
+    <div class="spinner" [class.is-disabled]="disabled()">
+      <input
+        class="field field--number"
+        type="number"
+        [attr.min]="widget.min"
+        [attr.max]="widget.max"
+        [attr.step]="widget.step"
+        [value]="numeric()"
+        [disabled]="disabled()"
+        (input)="onNumber($event)"
+        fDragBlocker
+      />
+      @if (widget.unit) {
+        <span class="unit">{{ widget.unit }}</span>
+      }
+      <div class="spinner__buttons">
+        <button type="button" [disabled]="disabled()" (click)="step(1)" aria-label="Increase" fDragBlocker>
+          <app-icon name="chevron" [size]="10" />
+        </button>
+        <button type="button" [disabled]="disabled()" (click)="step(-1)" aria-label="Decrease" fDragBlocker>
+          <app-icon name="chevron" [size]="10" />
+        </button>
+      </div>
+    </div>
+  }
+
+  @case ('slider') {
+    <div class="slider">
+      <input
+        class="slider__track"
+        type="range"
+        [attr.min]="widget.min"
+        [attr.max]="widget.max"
+        [attr.step]="widget.step"
+        [value]="numeric()"
+        [disabled]="disabled()"
+        [style.--fill.%]="sliderPercent()"
+        (input)="onNumber($event)"
+        fDragBlocker
+      />
+      <input
+        class="field field--number slider__value"
+        type="number"
+        [attr.min]="widget.min"
+        [attr.max]="widget.max"
+        [attr.step]="widget.step"
+        [value]="numeric()"
+        [disabled]="disabled()"
+        (input)="onNumber($event)"
+        fDragBlocker
+      />
+    </div>
+  }
+
+  @case ('toggle') {
+    <label class="check" [class.is-disabled]="disabled()" fDragBlocker>
+      <input type="checkbox" [checked]="checked()" [disabled]="disabled()" (change)="onToggle($event)" />
+      <span class="check__box">
+        @if (checked()) {
+          <app-icon name="check" [size]="11" [weight]="3" />
+        }
+      </span>
+      <span class="check__label"><ng-content /></span>
+    </label>
+  }
+
+  @case ('dropdown') {
+    <div class="select">
+      <select class="field" [value]="text()" [disabled]="disabled()" (change)="onSelect($event)" fDragBlocker>
+        @for (option of widget.options; track option.value) {
+          <option [value]="option.value">{{ option.label }}</option>
+        }
+      </select>
+      <app-icon class="select__chevron" name="chevron" [size]="13" />
+    </div>
+  }
+
+  @case ('directory') {
+    <div class="picker">
+      <app-icon class="picker__icon" name="folder" [size]="13" />
+      <input
+        class="field field--picker"
+        type="text"
+        placeholder="Choose a folder…"
+        [value]="text()"
+        [disabled]="disabled()"
+        (input)="onText($event)"
+        fDragBlocker
+      />
+    </div>
+  }
+
+  @case ('file') {
+    <div class="picker">
+      <app-icon class="picker__icon" name="document" [size]="13" />
+      <input
+        class="field field--picker"
+        type="text"
+        placeholder="Choose a file…"
+        [value]="text()"
+        [disabled]="disabled()"
+        (input)="onText($event)"
+        fDragBlocker
+      />
+    </div>
+  }
+}

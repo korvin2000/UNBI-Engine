@@ -1,0 +1,222 @@
+:host {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 52px;
+  padding: 0 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+// --- Brand ----------------------------------------------------------------
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+}
+
+.brand__mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #2b3550, #1a2133);
+  border: 1px solid #3a4460;
+  color: var(--accent);
+}
+
+.brand__name {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #eaf0fb;
+}
+
+.brand__chip {
+  padding: 2px 8px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.brand__chip--version {
+  font-variant-numeric: tabular-nums;
+}
+
+// --- Transport ------------------------------------------------------------
+
+.transport {
+  display: flex;
+  gap: 7px;
+  flex: none;
+  margin-left: 8px;
+}
+
+.transport__button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 34px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  transition:
+    color var(--tempo) var(--ease),
+    border-color var(--tempo) var(--ease),
+    background var(--tempo) var(--ease),
+    transform var(--tempo) var(--ease);
+
+  &:hover:not(:disabled) {
+    color: var(--text);
+    border-color: var(--node-border-hover);
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  &:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+  }
+}
+
+.transport__button--run:not(:disabled) {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--border));
+
+  &:hover {
+    background: color-mix(in srgb, var(--ok) 14%, var(--panel-raised));
+    border-color: var(--ok);
+  }
+}
+
+// --- Status ---------------------------------------------------------------
+// Doubles as the run progress bar: the fill is behind the text rather than a separate element.
+
+.status {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  overflow: hidden;
+}
+
+.status__bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--running) 26%, transparent);
+  transition: width var(--tempo-slow) var(--ease);
+}
+
+.status__text {
+  position: relative;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status[data-kind='running'] .status__text {
+  color: var(--text);
+}
+
+.status[data-kind='ok'] .status__text {
+  color: var(--ok);
+}
+
+.status[data-kind='warn'] .status__text {
+  color: var(--warn);
+}
+
+.status[data-kind='error'] .status__text {
+  color: var(--danger);
+}
+
+// --- Actions --------------------------------------------------------------
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+
+  button {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 30px;
+    color: var(--text-muted);
+    border-radius: var(--radius);
+    transition: color var(--tempo) var(--ease), background var(--tempo) var(--ease);
+
+    &:hover:not(:disabled) {
+      color: var(--text);
+      background: var(--panel-raised);
+    }
+
+    &:disabled {
+      opacity: 0.32;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.actions__divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 5px;
+  background: var(--border);
+}
+
+.link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.link__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  transition: background var(--tempo) var(--ease);
+}
+
+.link.is-live {
+  color: var(--text-muted);
+
+  .link__dot {
+    background: var(--ok);
+    // A slow pulse reads as "alive" without demanding attention.
+    animation: link-pulse 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes link-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}

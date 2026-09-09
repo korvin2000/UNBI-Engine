@@ -1,0 +1,17 @@
+# Normalise line endings so a repository built on Windows still works elsewhere.
+* text=auto eol=lf
+
+# gradlew is a shell script: CRLF makes it fail on Linux and macOS with a
+# "bad interpreter" error that is genuinely hard to diagnose.
+gradlew text eol=lf
+
+# Windows batch files need CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never touched.
+*.png binary
+*.jpg binary
+*.ico binary
+*.jar binary
+*.zip binary

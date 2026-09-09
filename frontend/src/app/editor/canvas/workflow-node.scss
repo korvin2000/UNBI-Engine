@@ -1,0 +1,386 @@
+// The node.
+//
+// Structure follows chaiNNer: an accent-tinted header with the category colour as a top rule, a
+// body of labelled rows, and a thin footer carrying run state. The accent arrives as
+// `--accent-node` from the `accent-*` class on the host, so every colour below is one variable.
+
+:host {
+  display: block;
+  width: var(--node-width);
+  background: var(--node-body);
+  border: 1px solid var(--node-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-node);
+  color: var(--text);
+  user-select: none;
+  // Not `overflow: hidden`: ports straddle the node border by design, and clipping the node would
+  // slice every one of them in half. The header and footer round their own corners instead.
+  overflow: visible;
+  transition:
+    box-shadow var(--tempo) var(--ease),
+    border-color var(--tempo) var(--ease),
+    transform var(--tempo) var(--ease);
+}
+
+:host(:hover) {
+  border-color: var(--node-border-hover);
+}
+
+// `.f-selected` is applied by the flow library to the node host.
+:host(.f-selected) {
+  box-shadow: var(--shadow-node-selected);
+  border-color: var(--selection);
+}
+
+:host(.has-problem) {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--node-border));
+}
+
+:host(.is-running) {
+  border-color: var(--accent-node);
+  box-shadow:
+    0 0 0 1px var(--accent-node),
+    0 0 22px var(--accent-node-glow),
+    var(--shadow-node);
+}
+
+:host(.is-failed) {
+  border-color: var(--danger);
+}
+
+// --- Header ---------------------------------------------------------------
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 7px;
+  // Accent tint fading to the header base, which keeps the colour readable without shouting.
+  background:
+    linear-gradient(180deg, var(--accent-node-dim), transparent),
+    var(--node-header);
+  border-top: 2px solid var(--accent-node);
+  // Inset by the host border so the corner curves sit flush rather than a pixel proud.
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+// The title is centred within the header, with the chevron and delete button as equal-width
+// bookends so centring is optical as well as geometric.
+.head__identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.head__icon {
+  color: var(--accent-node);
+  flex: none;
+}
+
+.head__title {
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.head__collapse,
+.head__remove {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--text-faint);
+  border-radius: 3px;
+  transition: color var(--tempo) var(--ease), background var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+.head__collapse app-icon {
+  transition: transform var(--tempo) var(--ease);
+}
+
+:host(.is-collapsed) .head__collapse app-icon {
+  transform: rotate(-90deg);
+}
+
+.head__remove {
+  opacity: 0;
+
+  &:hover {
+    color: var(--danger);
+  }
+}
+
+:host(:hover) .head__remove {
+  opacity: 1;
+}
+
+.head__badge {
+  flex: none;
+  font-size: 11px;
+}
+
+.head__badge--running {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-node);
+  border-top-color: transparent;
+  animation: node-spin 0.7s linear infinite;
+}
+
+@keyframes node-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.head__badge--failed {
+  color: var(--danger);
+}
+
+.head__badge--skipped {
+  color: var(--text-faint);
+}
+
+// --- Body -----------------------------------------------------------------
+
+.body {
+  padding: 8px 0 4px;
+}
+
+.row {
+  position: relative;
+  padding: 2px 12px 5px;
+
+  &.is-wired .row__label {
+    color: var(--text);
+  }
+}
+
+.row--out {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding-top: 4px;
+}
+
+.row__label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+// A field label is centred above its control, as in the reference UI.
+.row__label--field {
+  margin-bottom: 3px;
+  text-align: center;
+}
+
+// A socket label reads inline from its port, so the eye follows the edge into the name.
+.row__label--socket {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-height: 17px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.row__label--out {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.row__optional {
+  font-size: 9.5px;
+  font-style: italic;
+  color: var(--text-faint);
+}
+
+// --- Ports ----------------------------------------------------------------
+// Positioned on the node edge so an edge appears to terminate at the boundary rather than inside.
+
+.port {
+  position: absolute;
+  top: 5px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--node-body);
+  border: 2px solid var(--port-colour, var(--text-faint));
+  cursor: crosshair;
+  transition:
+    transform var(--tempo) var(--ease),
+    background var(--tempo) var(--ease),
+    box-shadow var(--tempo) var(--ease);
+
+  &:hover {
+    transform: scale(1.35);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--port-colour, #888) 25%, transparent);
+  }
+}
+
+.port--in {
+  left: -6px;
+}
+
+.port--out {
+  position: relative;
+  top: 0;
+  right: -18px;
+  margin-left: 8px;
+}
+
+// Filled once something is attached, which is the fastest read of "is this wired?".
+//
+// `.f-connector-connected` is what the unified `fConnector` directive applies. The library's
+// styling notes also document `.f-node-input-connected` / `.f-node-output-connected`, but those
+// belong to the deprecated `fNodeInput` / `fNodeOutput` directives and never appear here.
+.port.f-connector-connected {
+  background: var(--port-colour, var(--text-faint));
+}
+
+// While a connection is being dragged, only the ports that would accept it stay lit. Everything
+// else recedes, so the legal drop targets are the only things competing for attention.
+:host-context(f-flow.f-connections-dragging) .port {
+  opacity: 0.25;
+}
+
+:host-context(f-flow.f-connections-dragging) .port.f-connector-connectable {
+  opacity: 1;
+  animation: port-invite 1.1s ease-in-out infinite;
+}
+
+@keyframes port-invite {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--port-colour, #888) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+// Collapsed: connectors stay rendered (a hidden connector loses its geometry) but stack invisibly
+// on the node edges so their edges still meet the node in a sensible place.
+.stub {
+  position: relative;
+  height: 6px;
+
+  .port--stub {
+    top: -4px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .port--out {
+    position: absolute;
+    right: -6px;
+    left: auto;
+    margin: 0;
+  }
+}
+
+// --- Inline preview -------------------------------------------------------
+
+.preview {
+  margin: 4px 12px 8px;
+  padding: 6px 8px;
+  max-height: 108px;
+  overflow: auto;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  font-family: 'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.preview__line {
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// --- Footer ---------------------------------------------------------------
+
+.foot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 19px;
+  padding: 2px 8px;
+  background: var(--node-footer);
+  border-top: 1px solid var(--border-soft);
+  border-radius: 0 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px);
+  font-size: 10px;
+  color: var(--text-faint);
+  // Scoped to the footer: keeps the progress fill inside the rounded corners without clipping the
+  // ports, which overflow the node on purpose.
+  overflow: hidden;
+}
+
+// The progress fill sits behind the footer text rather than as a separate bar, which keeps the
+// node compact — the same trick chaiNNer uses.
+.foot__progress {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent-node-dim);
+  transition: width var(--tempo-slow) var(--ease);
+  pointer-events: none;
+}
+
+.foot__state,
+.foot__message,
+.foot__timing {
+  position: relative;
+}
+
+.foot__state--ok {
+  color: var(--ok);
+}
+
+.foot__state--problem {
+  color: var(--danger);
+}
+
+.foot__message {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.foot__message--problem {
+  color: color-mix(in srgb, var(--danger) 75%, var(--text));
+}
+
+.foot__timing {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}

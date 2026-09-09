@@ -1,0 +1,68 @@
+<div class="brand">
+  <span class="brand__mark"><app-icon name="link" [size]="18" /></span>
+  <span class="brand__name">UNBI</span>
+  <span class="brand__chip">Prototype</span>
+  <span class="brand__chip brand__chip--version">v0.1.0</span>
+</div>
+
+<div class="transport">
+  <button
+    class="transport__button transport__button--run"
+    type="button"
+    [disabled]="!canRun()"
+    [attr.title]="runTooltip()"
+    (click)="run()"
+  >
+    <app-icon name="play" [size]="17" [filled]="true" [weight]="0" />
+  </button>
+
+  <button
+    class="transport__button"
+    type="button"
+    [disabled]="!isRunning()"
+    title="Stop the run"
+    (click)="stop()"
+  >
+    <app-icon name="stop" [size]="15" [filled]="true" [weight]="0" />
+  </button>
+</div>
+
+<div class="status" [attr.data-kind]="statusKind()">
+  <span class="status__bar" [style.width.%]="progressPercent()"></span>
+  <span class="status__text">{{ statusText() }}</span>
+</div>
+
+<div class="actions">
+  <button type="button" [disabled]="!canUndo()" title="Undo" (click)="undo()">
+    <app-icon name="undo" [size]="15" />
+  </button>
+  <button type="button" [disabled]="!canRedo()" title="Redo" (click)="redo()">
+    <app-icon name="redo" [size]="15" />
+  </button>
+
+  <span class="actions__divider"></span>
+
+  <button type="button" title="Load the example workflow" (click)="loadExample()">
+    <app-icon name="star" [size]="15" />
+  </button>
+  <button type="button" title="Open a workflow file" (click)="open()">
+    <app-icon name="open" [size]="15" />
+  </button>
+  <button type="button" title="Save this workflow" (click)="save()">
+    <app-icon name="save" [size]="15" />
+  </button>
+  <button type="button" title="Clear the canvas" (click)="clear()">
+    <app-icon name="trash" [size]="15" />
+  </button>
+
+  <span class="actions__divider"></span>
+
+  <span
+    class="link"
+    [class.is-live]="connection() === 'open'"
+    [attr.title]="'Engine ' + connection()"
+  >
+    <span class="link__dot"></span>
+    {{ connection() === 'open' ? 'Connected' : connection() === 'connecting' ? 'Connecting' : 'Offline' }}
+  </span>
+</div>

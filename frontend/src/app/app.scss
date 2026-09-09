@@ -1,0 +1,24 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.workspace__panel {
+  width: 268px;
+  flex: none;
+  min-height: 0;
+}
+
+.workspace__canvas {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}

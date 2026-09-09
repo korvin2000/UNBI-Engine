@@ -141,3 +141,20 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# --- Java / Gradle ---
+build/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# --- Local toolchain -------------------------------------------------------
+# A JDK and a Gradle distribution are downloaded here so the project builds on a
+# machine with neither installed. Both are large and reproducible; see README.
+tools/
+
+# --- Generated output ------------------------------------------------------
+# Where the example workflow writes its report.
+reports/
+
+# --- Angular ---
+.angular/

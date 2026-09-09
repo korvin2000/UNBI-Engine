@@ -1,0 +1,295 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  flex: none;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-head__tab {
+  position: relative;
+  padding: 11px 6px 9px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+
+  &.is-active {
+    color: var(--accent);
+
+    // The 2px underline on the active tab, exactly as in chaiNNer.
+    &::after {
+      content: '';
+      position: absolute;
+      inset: auto 0 -1px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 2px 2px 0 0;
+    }
+  }
+}
+
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search__icon {
+  position: absolute;
+  left: 20px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.search__input {
+  width: 100%;
+  padding: 6px 26px 6px 30px;
+  background: var(--panel-sunken);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color var(--tempo) var(--ease), background var(--tempo) var(--ease);
+
+  &::placeholder {
+    color: var(--text-faint);
+  }
+
+  &:focus {
+    border-color: var(--accent);
+    background: var(--panel-raised);
+  }
+
+  &::-webkit-search-cancel-button {
+    appearance: none;
+  }
+}
+
+.search__clear {
+  position: absolute;
+  right: 18px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  font-size: 15px;
+  line-height: 1;
+  border-radius: 50%;
+
+  &:hover {
+    color: var(--text);
+    background: var(--panel-raised);
+  }
+}
+
+.result-count {
+  flex: none;
+  margin: 0;
+  padding: 6px 14px 2px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 10px;
+}
+
+.category {
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.category__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  transition: background var(--tempo) var(--ease);
+
+  &:hover {
+    background: var(--panel-raised);
+  }
+}
+
+.category__icon {
+  color: var(--accent-node);
+}
+
+.category__name {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.category__chevron {
+  color: var(--text-faint);
+  transition: transform var(--tempo) var(--ease);
+
+  &.is-collapsed {
+    transform: rotate(-90deg);
+  }
+}
+
+.category__body {
+  padding: 0 10px 8px;
+  // Categories open with a quick reveal rather than appearing instantly, which keeps the eye
+  // anchored on the header that was just clicked.
+  animation: reveal var(--tempo-slow) var(--ease);
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 9px 2px 5px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+
+  // The hairline that runs from the label to the panel edge, as in the reference UI.
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+}
+
+// A palette entry: the rounded accent bar on the left is the visual link between the palette and
+// the node it creates, which carries the same accent on its header.
+.entry {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 7px 9px 7px 14px;
+  background: var(--panel-raised);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  text-align: left;
+  overflow: hidden;
+  // Explicit, not inherited: the Foblex default theme sets a near-black colour on
+  // `.f-external-item`, which this button also carries.
+  color: var(--text);
+  transition:
+    background var(--tempo) var(--ease),
+    border-color var(--tempo) var(--ease),
+    transform var(--tempo) var(--ease);
+
+  &:hover {
+    background: #232c40;
+    border-color: var(--accent-node);
+    transform: translateX(2px);
+  }
+
+  &:active {
+    transform: translateX(2px) scale(0.99);
+  }
+}
+
+.entry__bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--accent-node);
+  border-radius: 0 3px 3px 0;
+}
+
+.entry__icon {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.entry__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notice {
+  margin: 26px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.notice--error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--danger);
+
+  p {
+    margin: 0;
+  }
+}
+
+.notice__detail {
+  color: var(--text-faint);
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.notice__retry {
+  margin-top: 8px;
+  padding: 5px 14px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 12px;
+
+  &:hover {
+    border-color: var(--accent);
+  }
+}
+
+.panel-foot {
+  flex: none;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-align: center;
+}

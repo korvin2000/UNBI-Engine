@@ -1,0 +1,261 @@
+:host {
+  display: block;
+  width: 100%;
+}
+
+// The shared look of every editable control in a node. Sunken, low contrast until focused, so a
+// node body reads as one object rather than as a stack of competing boxes.
+.field {
+  width: 100%;
+  padding: 5px 8px;
+  background: var(--node-field);
+  border: 1px solid var(--node-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  transition:
+    border-color var(--tempo) var(--ease),
+    box-shadow var(--tempo) var(--ease),
+    background var(--tempo) var(--ease);
+
+  &::placeholder {
+    color: var(--text-faint);
+  }
+
+  &:hover:not(:disabled) {
+    border-color: var(--node-border-hover);
+  }
+
+  &:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.field--area {
+  resize: vertical;
+  min-height: 58px;
+  line-height: 1.4;
+  font-family: inherit;
+}
+
+// Native spinners are removed in favour of the stacked chevrons chaiNNer uses, which are easier to
+// hit and consistent across browsers.
+.field--number {
+  appearance: textfield;
+  -moz-appearance: textfield;
+  padding-right: 22px;
+
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+}
+
+.spinner {
+  position: relative;
+  display: flex;
+  align-items: center;
+
+  .unit {
+    position: absolute;
+    right: 26px;
+    color: var(--text-faint);
+    font-size: 11px;
+    pointer-events: none;
+  }
+}
+
+.spinner__buttons {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  bottom: 1px;
+  width: 18px;
+  display: flex;
+  flex-direction: column;
+
+  button {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    color: var(--text-faint);
+    border-radius: 2px;
+    transition: color var(--tempo) var(--ease), background var(--tempo) var(--ease);
+
+    &:hover:not(:disabled) {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    // The chevron glyph points down; the increase button reuses it flipped.
+    &:first-child app-icon {
+      transform: rotate(180deg);
+    }
+  }
+}
+
+.slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slider__value {
+  width: 62px;
+  flex: none;
+}
+
+// The filled portion of the track is painted with a gradient driven by a custom property, so the
+// fill follows the value without a second element or any JavaScript.
+.slider__track {
+  flex: 1;
+  appearance: none;
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) calc(var(--fill, 0) * 1%),
+    var(--node-field) calc(var(--fill, 0) * 1%),
+    var(--node-field) 100%
+  );
+  outline: none;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: #eef2fb;
+    border: 2px solid var(--accent);
+    cursor: grab;
+    transition: transform var(--tempo) var(--ease), box-shadow var(--tempo) var(--ease);
+  }
+
+  &::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+
+  &::-moz-range-thumb {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: #eef2fb;
+    border: 2px solid var(--accent);
+    cursor: grab;
+  }
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+
+  &.is-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+.check__box {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--node-field);
+  border: 1px solid var(--node-border);
+  border-radius: 3px;
+  color: #fff;
+  transition: background var(--tempo) var(--ease), border-color var(--tempo) var(--ease);
+}
+
+.check:hover .check__box {
+  border-color: var(--node-border-hover);
+}
+
+.check input:checked + .check__box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.check input:focus-visible + .check__box {
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.check__label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.select {
+  position: relative;
+
+  select {
+    appearance: none;
+    padding-right: 26px;
+    cursor: pointer;
+  }
+
+  option {
+    background: var(--panel-raised);
+    color: var(--text);
+  }
+}
+
+.select__chevron {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.picker__icon {
+  position: absolute;
+  left: 7px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.field--picker {
+  padding-left: 26px;
+  // Long paths are common; showing the end matters more than showing the drive letter.
+  direction: ltr;
+  text-overflow: ellipsis;
+}

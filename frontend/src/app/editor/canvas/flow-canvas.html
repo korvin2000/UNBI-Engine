@@ -1,0 +1,74 @@
+<f-flow
+  fDraggable
+  (fCreateConnection)="onCreateConnection($event)"
+  (fReassignConnection)="onReassignConnection($event)"
+  (fMoveNodes)="onMoveNodes($event)"
+  (fCreateNode)="onCreateNode($event)"
+  (fSelectionChange)="onSelectionChange($event)"
+  (fDeleteSelected)="onDeleteSelected()"
+  (fNodesRendered)="onNodesRendered()"
+>
+  <f-background>
+    <f-circle-pattern [radius]="1.1" color="var(--canvas-dot)" />
+  </f-background>
+
+  <f-selection-area />
+
+  <f-canvas [fZoom]="true" (fCanvasChange)="onCanvasChange()">
+    <f-connection-for-create fBehavior="floating" fType="segment" />
+
+    <!--
+      Nodes and connections are wrapped in ngProjectAs containers because they sit inside @for
+      blocks. Without it Angular creates them detached from the canvas, geometry collapses to 0x0,
+      and nothing renders — with no error (Foblex FF1004).
+    -->
+    <ng-container ngProjectAs="[fNodes]">
+      @for (entry of placed(); track entry.node.id) {
+        <app-workflow-node
+          fNode
+          [fNodeId]="entry.node.id"
+          [fNodePosition]="entry.node.position"
+          [node]="entry.node"
+          [spec]="entry.spec"
+        />
+      }
+    </ng-container>
+
+    <ng-container ngProjectAs="[fConnections]">
+      @for (item of edges(); track item.edge.id) {
+        <f-connection
+          [fConnectionId]="item.edge.id"
+          [fSourceId]="item.source"
+          [fTargetId]="item.target"
+          [class.edge-invalid]="item.invalid"
+          [class.edge-flowing]="item.flowing"
+          fBehavior="floating"
+          fType="segment"
+        />
+      }
+    </ng-container>
+  </f-canvas>
+</f-flow>
+
+@if (isEmpty()) {
+  <div class="empty">
+    <app-icon name="grid" [size]="34" [weight]="1.2" />
+    <p class="empty__title">Nothing here yet</p>
+    <p class="empty__hint">Drag a node from the left panel to begin, then wire the outputs together.</p>
+  </div>
+}
+
+<div class="viewport-controls">
+  <button type="button" (click)="zoomIn()" aria-label="Zoom in" title="Zoom in">
+    <app-icon name="plus" [size]="15" />
+  </button>
+  <button type="button" (click)="zoomOut()" aria-label="Zoom out" title="Zoom out">
+    <app-icon name="minus" [size]="15" />
+  </button>
+  <button type="button" (click)="fit()" aria-label="Fit to screen" title="Fit to screen">
+    <app-icon name="fit" [size]="15" />
+  </button>
+  <button class="viewport-controls__zoom" type="button" (click)="resetZoom()" title="Reset zoom">
+    {{ zoomLabel() }}
+  </button>
+</div>

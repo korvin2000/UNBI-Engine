@@ -1,0 +1,131 @@
+{
+  "$comment": [
+    "The port type system is implemented twice: Java (backend validation + engine) and",
+    "TypeScript (drag-time port highlighting, so the editor can refuse a bad edge without a",
+    "round trip). Two implementations of one domain rule is a defect waiting to happen, so",
+    "both are held to this table. backend/src/test/java/.../TypeAssignabilityContractTest.java",
+    "and frontend/src/app/core/types/assignability.contract.spec.ts each read this file and",
+    "must agree with every row. Adding a rule means adding rows here first."
+  ],
+  "types": {
+    "Text": { "kind": "primitive", "name": "Text" },
+    "Number": { "kind": "primitive", "name": "Number" },
+    "Boolean": { "kind": "primitive", "name": "Boolean" },
+    "Directory": { "kind": "primitive", "name": "Directory" },
+    "Any": { "kind": "any" },
+
+    "FileRef": {
+      "kind": "struct",
+      "name": "FileRef",
+      "fields": {
+        "path": { "kind": "primitive", "name": "Text" },
+        "name": { "kind": "primitive", "name": "Text" },
+        "extension": { "kind": "primitive", "name": "Text" },
+        "size": { "kind": "primitive", "name": "Number" }
+      }
+    },
+    "FileRefWithExtra": {
+      "kind": "struct",
+      "name": "ScannedFile",
+      "fields": {
+        "path": { "kind": "primitive", "name": "Text" },
+        "name": { "kind": "primitive", "name": "Text" },
+        "extension": { "kind": "primitive", "name": "Text" },
+        "size": { "kind": "primitive", "name": "Number" },
+        "depth": { "kind": "primitive", "name": "Number" }
+      }
+    },
+    "FileRefMissingField": {
+      "kind": "struct",
+      "name": "PartialFile",
+      "fields": {
+        "path": { "kind": "primitive", "name": "Text" },
+        "name": { "kind": "primitive", "name": "Text" }
+      }
+    },
+    "FileRefWrongFieldType": {
+      "kind": "struct",
+      "name": "OddFile",
+      "fields": {
+        "path": { "kind": "primitive", "name": "Text" },
+        "name": { "kind": "primitive", "name": "Text" },
+        "extension": { "kind": "primitive", "name": "Text" },
+        "size": { "kind": "primitive", "name": "Text" }
+      }
+    },
+
+    "FileList": { "kind": "list", "element": { "kind": "struct", "name": "FileRef", "fields": {
+      "path": { "kind": "primitive", "name": "Text" },
+      "name": { "kind": "primitive", "name": "Text" },
+      "extension": { "kind": "primitive", "name": "Text" },
+      "size": { "kind": "primitive", "name": "Number" }
+    } } },
+    "FileListWithExtra": { "kind": "list", "element": { "kind": "struct", "name": "ScannedFile", "fields": {
+      "path": { "kind": "primitive", "name": "Text" },
+      "name": { "kind": "primitive", "name": "Text" },
+      "extension": { "kind": "primitive", "name": "Text" },
+      "size": { "kind": "primitive", "name": "Number" },
+      "depth": { "kind": "primitive", "name": "Number" }
+    } } },
+    "TextList": { "kind": "list", "element": { "kind": "primitive", "name": "Text" } },
+    "TextListList": { "kind": "list", "element": { "kind": "list", "element": { "kind": "primitive", "name": "Text" } } },
+    "AnyList": { "kind": "list", "element": { "kind": "any" } },
+
+    "TextOrNumber": {
+      "kind": "union",
+      "members": [
+        { "kind": "primitive", "name": "Text" },
+        { "kind": "primitive", "name": "Number" }
+      ]
+    },
+    "TextOrNumberOrBoolean": {
+      "kind": "union",
+      "members": [
+        { "kind": "primitive", "name": "Text" },
+        { "kind": "primitive", "name": "Number" },
+        { "kind": "primitive", "name": "Boolean" }
+      ]
+    },
+    "TextOrDirectory": {
+      "kind": "union",
+      "members": [
+        { "kind": "primitive", "name": "Text" },
+        { "kind": "primitive", "name": "Directory" }
+      ]
+    }
+  },
+  "cases": [
+    { "from": "Text",      "to": "Text",      "assignable": true,  "rule": "identity" },
+    { "from": "Text",      "to": "Number",    "assignable": false, "rule": "primitives match by name only" },
+    { "from": "Directory", "to": "Text",      "assignable": false, "rule": "a Directory is not an arbitrary string" },
+
+    { "from": "Text", "to": "Any",  "assignable": true, "rule": "Any is the top type" },
+    { "from": "Any",  "to": "Text", "assignable": true, "rule": "Any is also the dynamic escape hatch (deliberately unsound)" },
+    { "from": "Any",  "to": "Any",  "assignable": true, "rule": "identity" },
+    { "from": "FileList", "to": "Any", "assignable": true, "rule": "Any accepts composites too" },
+
+    { "from": "FileList",     "to": "FileList",     "assignable": true,  "rule": "identity through a list" },
+    { "from": "FileList",     "to": "TextList",     "assignable": false, "rule": "element types must match" },
+    { "from": "FileRef",      "to": "FileList",     "assignable": false, "rule": "a single value is not a list" },
+    { "from": "FileList",     "to": "FileRef",      "assignable": false, "rule": "a list is not a single value" },
+    { "from": "TextList",     "to": "AnyList",      "assignable": true,  "rule": "lists are covariant, Any absorbs the element" },
+    { "from": "TextListList", "to": "TextList",     "assignable": false, "rule": "nesting depth is part of the type" },
+    { "from": "FileListWithExtra", "to": "FileList", "assignable": true, "rule": "list covariance composes with struct width subtyping" },
+
+    { "from": "FileRefWithExtra",      "to": "FileRef",           "assignable": true,  "rule": "width subtyping: extra fields are fine" },
+    { "from": "FileRef",               "to": "FileRefWithExtra",  "assignable": false, "rule": "a missing required field is not fine" },
+    { "from": "FileRefMissingField",   "to": "FileRef",           "assignable": false, "rule": "target fields are all required" },
+    { "from": "FileRefWrongFieldType", "to": "FileRef",           "assignable": false, "rule": "field types are checked, not just names" },
+    { "from": "FileRef",               "to": "FileRefMissingField","assignable": true, "rule": "narrowing to fewer fields is safe" },
+
+    { "from": "Text",         "to": "TextOrNumber",          "assignable": true,  "rule": "union target: one member is enough" },
+    { "from": "Number",       "to": "TextOrNumber",          "assignable": true,  "rule": "union target: the other member" },
+    { "from": "Boolean",      "to": "TextOrNumber",          "assignable": false, "rule": "union target: no member matches" },
+    { "from": "TextOrNumber", "to": "Text",                  "assignable": false, "rule": "union source: Number would not fit" },
+    { "from": "TextOrNumber", "to": "TextOrNumber",          "assignable": true,  "rule": "identity through a union" },
+    { "from": "TextOrNumber", "to": "TextOrNumberOrBoolean", "assignable": true,  "rule": "union source: every member fits somewhere in the target" },
+    { "from": "TextOrNumberOrBoolean", "to": "TextOrNumber", "assignable": false, "rule": "union source: Boolean has nowhere to go" },
+    { "from": "TextOrNumber", "to": "Any",                   "assignable": true,  "rule": "Any absorbs unions" },
+    { "from": "TextOrDirectory", "to": "TextOrNumber",       "assignable": false, "rule": "Directory has no home in the target union" }
+  ]
+}

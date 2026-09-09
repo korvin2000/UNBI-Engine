@@ -1,0 +1,195 @@
+@use 'styles/tokens';
+@use '@foblex/flow/styles/index' as flow-theme;
+
+// Global styles.
+//
+// Deliberately small. Component styles are scoped; this file holds the reset, the app shell
+// geometry, and the flow-canvas rules that component styles cannot reach — Foblex renders
+// connections into its own layer outside any component's emulated encapsulation, so those live
+// here by necessity rather than by preference.
+
+// --- Flow theme, composed rather than taken wholesale ----------------------
+//
+// `default.scss` would apply `theme-all()`, whose `.f-node` frame is a 120px-wide, 24px-padded
+// light card — and at `f-flow .f-node` it outranks a component's `:host`, so the app's own node
+// design would silently lose. Including the domains individually is the supported way to say which
+// parts of the default look this app wants.
+//
+// Omitted on purpose:
+//   node/group/grouping — this app draws its own nodes (see workflow-node.scss)
+//   connector           — ports are positioned and coloured per port type by the node component
+//   resize/rotate handle — neither gesture is enabled
+@include flow-theme.theme-tokens();
+@include flow-theme.flow-canvas();
+@include flow-theme.drag-handle();
+@include flow-theme.connection-all();
+@include flow-theme.external-item-all();
+@include flow-theme.plugins();
+
+// Point the library's remaining tokens at this app's palette, so anything not restyled below still
+// lands in the right colour rather than in the default theme's near-white.
+:root {
+  --ff-flow-background-color: var(--canvas);
+  --ff-canvas-background-color: transparent;
+  --ff-flow-text-color: var(--text);
+  --ff-flow-font-family: inherit;
+  --ff-flow-font-size: 13px;
+  --ff-color-accent: var(--accent);
+  --ff-connection-color: var(--edge);
+  --ff-connection-color-selected: var(--selection);
+  --ff-selection-area-background-color: var(--accent-soft);
+  --ff-selection-area-border-color: var(--selection);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--ground);
+  color: var(--text);
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+// --- Scrollbars ----------------------------------------------------------
+// The default light scrollbar is the single most jarring thing on a dark canvas.
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #38415c transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #38415c;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+
+  &:hover {
+    background: #4a5474;
+    background-clip: content-box;
+  }
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+// --- Flow canvas ---------------------------------------------------------
+// Reached from global scope on purpose: connections, markers and the drag preview are rendered
+// outside the component tree, so `::ng-deep` from a component would be both fragile and no more
+// encapsulated than this.
+
+f-flow {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.f-connection {
+  .f-connection-drag-handle {
+    stroke-width: 18;
+  }
+
+  .f-connection-path {
+    stroke: var(--edge);
+    stroke-width: 2;
+    fill: none;
+    transition: stroke var(--tempo) var(--ease), stroke-width var(--tempo) var(--ease);
+  }
+
+  &:hover .f-connection-path {
+    stroke: var(--edge-active);
+    stroke-width: 2.5;
+  }
+
+  &.f-selected .f-connection-path {
+    stroke: var(--selection);
+    stroke-width: 3;
+  }
+
+  // An edge the validator rejected. Dashed and red reads as "broken" without needing a legend.
+  &.edge-invalid .f-connection-path {
+    stroke: var(--danger);
+    stroke-dasharray: 6 4;
+  }
+
+  // While the run is live, edges whose producer has finished carry a travelling dash. Pure CSS on
+  // stroke-dashoffset, so a hundred animated edges cost no JavaScript per frame.
+  &.edge-flowing .f-connection-path {
+    stroke: var(--edge-active);
+    stroke-dasharray: 7 7;
+    animation: edge-flow 0.6s linear infinite;
+  }
+}
+
+@keyframes edge-flow {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+
+.f-connection-for-create .f-connection-path {
+  stroke: var(--edge-active);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+  fill: none;
+}
+
+// The dotted grid. Two layers so the canvas reads as paper rather than as a texture.
+.f-canvas-background {
+  background-color: var(--canvas);
+}
+
+.f-selection-area {
+  background: var(--accent-soft);
+  border: 1px solid var(--selection);
+  border-radius: 2px;
+}
+
+// The node preview that follows the pointer when dragging out of the palette.
+.f-external-item-preview {
+  opacity: 0.9;
+  transform: rotate(-1deg);
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.6));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,116 @@
+// Design tokens.
+//
+// Custom properties rather than SCSS variables: node accent colours are chosen at runtime from the
+// descriptor the backend served, so they have to be settable from a binding. SCSS still does the
+// work that belongs at build time (the accent map below), which keeps the runtime surface small.
+//
+// The palette is taken from chaiNNer: a near-black blue ground, panels a shade above it, node
+// bodies a shade above that, and saturated per-category accents carrying almost all of the colour.
+
+:root {
+  // --- Ground -------------------------------------------------------------
+  --ground:          #0e1320;
+  --canvas:          #131a29;
+  --canvas-dot:      #262f47;
+  --panel:           #151c2c;
+  --panel-raised:    #1b2334;
+  --panel-sunken:    #101623;
+
+  // --- Node surfaces ------------------------------------------------------
+  --node-body:       #262d3d;
+  --node-header:     #2f3546;
+  --node-footer:     #212836;
+  --node-field:      #1c2231;
+  --node-border:     #3a4256;
+  --node-border-hover: #4d5670;
+
+  // --- Lines and text -----------------------------------------------------
+  --border:          #232b40;
+  --border-soft:     #1d2437;
+  --text:            #e6ebf5;
+  --text-muted:      #97a2ba;
+  --text-faint:      #6b7690;
+
+  // --- Interaction --------------------------------------------------------
+  --accent:          #3f8cff;
+  --accent-soft:     rgba(63, 140, 255, 0.16);
+  --edge:            #dd8140;
+  --edge-active:     #ffb066;
+  --selection:       #63a4ff;
+
+  // --- Status -------------------------------------------------------------
+  --ok:              #48bb78;
+  --warn:            #ecc94b;
+  --danger:          #f56565;
+  --running:         #4299e1;
+
+  // --- Geometry -----------------------------------------------------------
+  --radius-sm:       4px;
+  --radius:          6px;
+  --radius-lg:       10px;
+  --node-width:      248px;
+
+  // --- Motion -------------------------------------------------------------
+  // One duration for anything the user initiated, one slower for ambient feedback.
+  --tempo:           140ms;
+  --tempo-slow:      300ms;
+  --ease:            cubic-bezier(0.3, 0.8, 0.4, 1);
+
+  --shadow-node:     0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-node-selected: 0 0 0 1px var(--selection), 0 8px 26px rgba(0, 0, 0, 0.55);
+  --shadow-panel:    0 8px 30px rgba(0, 0, 0, 0.5);
+
+  font-synthesis-weight: none;
+}
+
+// Per-category accents.
+//
+// The backend names an accent (`amber`, `sky`, ...) and the frontend owns what that looks like.
+// A node pack therefore cannot dictate the palette, which is what stops a third-party pack from
+// making the canvas incoherent.
+$accents: (
+  'rose':    #e05563,
+  'amber':   #dd8140,
+  'sky':     #3f8cff,
+  'violet':  #8b6ce0,
+  'emerald': #3faa72,
+  'teal':    #38a89d,
+  'slate':   #6b7690,
+);
+
+@each $name, $colour in $accents {
+  .accent-#{$name} {
+    --accent-node: #{$colour};
+    --accent-node-dim: #{rgba($colour, 0.18)};
+    --accent-node-glow: #{rgba($colour, 0.45)};
+  }
+}
+
+:root {
+  // Fallback for a pack that names an accent this build does not know.
+  --accent-node: #6b7690;
+  --accent-node-dim: rgba(107, 118, 144, 0.18);
+  --accent-node-glow: rgba(107, 118, 144, 0.45);
+}
+
+// Port colours by type.
+//
+// The same type is the same colour everywhere in the graph, which is what lets you trace a
+// pipeline without reading a single label.
+$port-types: (
+  'Text':      #48bb78,
+  'Number':    #4299e1,
+  'Boolean':   #ecc94b,
+  'Directory': #b794f4,
+  'FileRef':   #ed8936,
+  'TextMatch': #f56565,
+  'FileEdit':  #38b2ac,
+  'Union':     #ed64a6,
+  'Any':       #a0aec0,
+);
+
+@each $name, $colour in $port-types {
+  .port-#{$name} {
+    --port-colour: #{$colour};
+  }
+}

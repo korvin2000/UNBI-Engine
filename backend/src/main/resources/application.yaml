@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: unbi-engine
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: 8080
+
+unbi:
+  cors:
+    # The Angular dev server. A packaged build serves the UI from this origin and needs none of these.
+    allowed-origins: http://localhost:4200,http://127.0.0.1:4200
+
+logging:
+  level:
+    com.unbi.engine: INFO

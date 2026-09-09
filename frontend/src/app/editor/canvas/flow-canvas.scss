@@ -1,0 +1,79 @@
+:host {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--canvas);
+  overflow: hidden;
+}
+
+// Placed by the flow library via a transform, so the host must not fight it with its own layout.
+app-workflow-node {
+  position: absolute;
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text-faint);
+  text-align: center;
+  // The canvas underneath must stay usable: this is a hint, not a layer.
+  pointer-events: none;
+}
+
+.empty__title {
+  margin: 10px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.empty__hint {
+  margin: 0;
+  max-width: 300px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.viewport-controls {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 3px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+
+  button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 26px;
+    color: var(--text-muted);
+    border-radius: var(--radius-sm);
+    transition: color var(--tempo) var(--ease), background var(--tempo) var(--ease);
+
+    &:hover {
+      color: var(--text);
+      background: var(--panel-raised);
+    }
+  }
+}
+
+.viewport-controls__zoom {
+  width: 28px !important;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
