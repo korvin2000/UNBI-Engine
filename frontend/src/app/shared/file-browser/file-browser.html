@@ -1,0 +1,117 @@
+@if (request(); as ask) {
+  <div class="scrim" (click)="cancel()"></div>
+
+  <div class="dialog" role="dialog" aria-modal="true" [attr.aria-label]="ask.title">
+    <header class="dialog__head">
+      <app-icon [name]="ask.mode === 'directory' ? 'folder-open' : 'file-blank'" [size]="15" />
+      <h2 class="dialog__title">{{ ask.title }}</h2>
+      <button class="dialog__close" type="button" aria-label="Close" (click)="cancel()">
+        <app-icon name="close" [size]="14" />
+      </button>
+    </header>
+
+    <div class="bar">
+      <button
+        class="bar__up"
+        type="button"
+        title="Go up one folder"
+        aria-label="Go up one folder"
+        [disabled]="!listing()?.parent"
+        (click)="up()"
+      >
+        <app-icon name="arrow-up" [size]="14" />
+      </button>
+
+      <nav class="crumbs" aria-label="Path">
+        @for (crumb of crumbs(); track crumb.path) {
+          <button type="button" class="crumbs__item" (click)="navigate(crumb.path)">{{ crumb.label }}</button>
+          <span class="crumbs__sep">{{ listing()?.separator }}</span>
+        }
+      </nav>
+
+      <input
+        class="bar__path"
+        type="text"
+        aria-label="Path"
+        spellcheck="false"
+        [value]="typed()"
+        (input)="onTyped($event)"
+        (keydown.enter)="goTyped()"
+      />
+      <button class="bar__go" type="button" (click)="goTyped()">Go</button>
+    </div>
+
+    <div class="dialog__body">
+      <aside class="roots" aria-label="Drives">
+        @for (root of listing()?.roots ?? []; track root) {
+          <button
+            type="button"
+            class="roots__item"
+            [class.is-current]="listing()?.path?.startsWith(root)"
+            (click)="navigate(root)"
+          >
+            <app-icon name="drive" [size]="13" />
+            <span>{{ root }}</span>
+          </button>
+        }
+      </aside>
+
+      <div class="listing">
+        <div class="listing__filter">
+          <app-icon name="search" [size]="13" />
+          <input
+            #filterBox
+            type="search"
+            placeholder="Filter this folder…"
+            aria-label="Filter this folder"
+            [value]="filter()"
+            (input)="onFilter($event)"
+          />
+        </div>
+
+        @if (failure(); as problem) {
+          <p class="listing__error"><app-icon name="warning" [size]="14" /> {{ problem }}</p>
+        }
+
+        <div class="listing__scroller">
+          @if (loading()) {
+            <p class="listing__empty">Loading…</p>
+          } @else {
+            @for (entry of visible(); track entry.path) {
+              <button
+                type="button"
+                class="entry"
+                [class.is-selected]="selected() === entry.path"
+                [class.entry--dir]="entry.directory"
+                (click)="onEntry(entry)"
+                (dblclick)="onEntryDoubleClick(entry)"
+              >
+                <app-icon [name]="entry.directory ? 'folder' : 'file-blank'" [size]="14" />
+                <span class="entry__name">{{ entry.name }}</span>
+                <span class="entry__size">{{ sizeOf(entry) }}</span>
+                <span class="entry__date">{{ dateOf(entry) }}</span>
+              </button>
+            } @empty {
+              <p class="listing__empty">
+                {{ filter() ? 'Nothing here matches that filter.' : 'This folder is empty.' }}
+              </p>
+            }
+          }
+        </div>
+      </div>
+    </div>
+
+    <footer class="dialog__foot">
+      <span class="dialog__result" [title]="result()">{{ result() || 'Nothing chosen yet' }}</span>
+      <button class="dialog__button" type="button" (click)="cancel()">Cancel</button>
+      <button
+        class="dialog__button dialog__button--primary"
+        type="button"
+        [disabled]="!confirmable()"
+        (click)="confirm()"
+      >
+        {{ ask.mode === 'directory' ? 'Use this folder' : 'Select' }}
+      </button>
+    </footer>
+  </div>
+}

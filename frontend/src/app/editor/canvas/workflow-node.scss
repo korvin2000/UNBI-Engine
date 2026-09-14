@@ -1,8 +1,15 @@
 // The node.
 //
-// Structure follows chaiNNer: an accent-tinted header with the category colour as a top rule, a
-// body of labelled rows, and a thin footer carrying run state. The accent arrives as
-// `--accent-node` from the `accent-*` class on the host, so every colour below is one variable.
+// Structure follows chaiNNer, measured from the reference screenshots rather than guessed:
+//
+//   header (accent tint) · 2px accent rule · band · inputs · band · outputs · footer
+//
+// The bands are not borders. The body's own background is the sunken colour and each section is a
+// lighter block sitting on it, so the gaps between sections *are* the bands — which is exactly how
+// the reference reads, and it costs no extra elements.
+//
+// The accent arrives as `--accent-node` from the `accent-*` class on the host, so every colour
+// below is one variable.
 
 :host {
   display: block;
@@ -19,7 +26,7 @@
   transition:
     box-shadow var(--tempo) var(--ease),
     border-color var(--tempo) var(--ease),
-    transform var(--tempo) var(--ease);
+    opacity var(--tempo) var(--ease);
 }
 
 :host(:hover) {
@@ -28,12 +35,14 @@
 
 // `.f-selected` is applied by the flow library to the node host.
 :host(.f-selected) {
-  box-shadow: var(--shadow-node-selected);
   border-color: var(--selection);
+  box-shadow:
+    0 0 0 1px var(--selection),
+    var(--shadow-node-selected);
 }
 
 :host(.has-problem) {
-  border-color: color-mix(in srgb, var(--danger) 55%, var(--node-border));
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--node-border));
 }
 
 :host(.is-running) {
@@ -48,18 +57,35 @@
   border-color: var(--danger);
 }
 
+// Switched off: still legible, plainly inert. Ports keep full opacity so the wires into and out of
+// it stay traceable — the node is excluded from the run, not removed from the graph.
+:host(.is-disabled) {
+  opacity: 0.55;
+  filter: saturate(0.35);
+}
+
+:host(.is-disabled) .port,
+:host(.is-bypassed) .port {
+  filter: saturate(2.6);
+}
+
+// On, but downstream of something that is off. Dimmed less than a switched-off node, because the
+// user did not choose this one and the thing to fix is somewhere else.
+:host(.is-bypassed) {
+  opacity: 0.72;
+  filter: saturate(0.6);
+}
+
 // --- Header ---------------------------------------------------------------
 
 .head {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 7px;
-  // Accent tint fading to the header base, which keeps the colour readable without shouting.
-  background:
-    linear-gradient(180deg, var(--accent-node-dim), transparent),
-    var(--node-header);
-  border-top: 2px solid var(--accent-node);
+  padding: 7px 8px;
+  background: var(--accent-node-header);
+  // The reference puts the category colour *under* the title as a rule, not above the node.
+  border-bottom: 2px solid var(--accent-node);
   // Inset by the host border so the corner curves sit flush rather than a pixel proud.
   border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
   cursor: grab;
@@ -69,8 +95,8 @@
   }
 }
 
-// The title is centred within the header, with the chevron and delete button as equal-width
-// bookends so centring is optical as well as geometric.
+// The title is centred within the header, with the chevron and the state badge as equal-width
+// bookends so the centring is optical as well as geometric.
 .head__identity {
   flex: 1;
   min-width: 0;
@@ -81,7 +107,8 @@
 }
 
 .head__icon {
-  color: var(--accent-node);
+  color: var(--text);
+  opacity: 0.85;
   flex: none;
 }
 
@@ -97,40 +124,33 @@
 }
 
 .head__collapse,
-.head__remove {
+.head__state {
   display: grid;
   place-items: center;
   width: 16px;
   height: 16px;
   flex: none;
-  color: var(--text-faint);
+}
+
+.head__collapse {
+  color: color-mix(in srgb, var(--text) 55%, transparent);
   border-radius: 3px;
-  transition: color var(--tempo) var(--ease), background var(--tempo) var(--ease);
+  transition:
+    color var(--tempo) var(--ease),
+    background var(--tempo) var(--ease);
 
   &:hover {
     color: var(--text);
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.1);
   }
-}
 
-.head__collapse app-icon {
-  transition: transform var(--tempo) var(--ease);
+  app-icon {
+    transition: transform var(--tempo) var(--ease);
+  }
 }
 
 :host(.is-collapsed) .head__collapse app-icon {
   transform: rotate(-90deg);
-}
-
-.head__remove {
-  opacity: 0;
-
-  &:hover {
-    color: var(--danger);
-  }
-}
-
-:host(:hover) .head__remove {
-  opacity: 1;
 }
 
 .head__badge {
@@ -139,10 +159,10 @@
 }
 
 .head__badge--running {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  border: 2px solid var(--accent-node);
+  border: 2px solid var(--text);
   border-top-color: transparent;
   animation: node-spin 0.7s linear infinite;
 }
@@ -157,112 +177,167 @@
   color: var(--danger);
 }
 
-.head__badge--skipped {
+.head__badge--skipped,
+.head__badge--off {
   color: var(--text-faint);
 }
 
 // --- Body -----------------------------------------------------------------
 
 .body {
-  padding: 8px 0 4px;
+  display: flex;
+  flex-direction: column;
+  // The sunken ground the sections sit on. The 5px gaps are the bands between sections.
+  background: var(--node-sunken);
+  gap: 4px;
+  padding-top: 4px;
+}
+
+.section {
+  background: var(--node-body);
+  padding: 4px 0 5px;
+}
+
+.section--log {
+  padding: 0;
+  background: transparent;
 }
 
 .row {
   position: relative;
-  padding: 2px 12px 5px;
-
-  &.is-wired .row__label {
-    color: var(--text);
-  }
+  padding: 3px var(--node-pad) 4px;
 }
 
-.row--out {
+// --- One line with a port on it -------------------------------------------
+//
+// `.line` and `.control` are the two things a port can be attached to, and both are the port's
+// positioning context. Because the port is centred on *this* box rather than on the row, it lands
+// beside the thing it belongs to whatever else the row contains — which is the whole reason the
+// old fixed `top` offset drifted on every row that had a label above its control.
+
+.line,
+.control {
+  position: relative;
   display: flex;
-  justify-content: flex-end;
   align-items: center;
-  padding-top: 4px;
+  gap: 6px;
+  min-height: 20px;
 }
 
-.row__label {
-  font-size: 11.5px;
-  color: var(--text-muted);
+.line--out {
+  justify-content: flex-end;
 }
 
-// A field label is centred above its control, as in the reference UI.
-.row__label--field {
-  margin-bottom: 3px;
-  text-align: center;
-}
-
-// A socket label reads inline from its port, so the eye follows the edge into the name.
-.row__label--socket {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  min-height: 17px;
+.line__label {
+  min-width: 0;
   font-size: 12.5px;
   color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.row__label--out {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--text);
-}
-
-.row__optional {
+.line__optional {
+  flex: none;
   font-size: 9.5px;
   font-style: italic;
   color: var(--text-faint);
 }
 
+.line__hint {
+  flex: none;
+  color: var(--text-faint);
+  cursor: help;
+}
+
+.row__label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-bottom: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.row__driven {
+  padding: 0 4px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--canvas);
+  background: var(--port-colour, var(--accent));
+  border-radius: 2px;
+}
+
 // --- Ports ----------------------------------------------------------------
-// Positioned on the node edge so an edge appears to terminate at the boundary rather than inside.
+//
+// A port's centre sits exactly on the node border: the row's padding is cancelled, then the circle
+// is pulled back by half its own width. Everything the flow library computes — where an edge
+// starts, where it ends, what counts as a drop target — comes from this element's box, so the edge
+// terminates in the middle of the circle by construction rather than by tuning.
 
 .port {
   position: absolute;
-  top: 5px;
-  width: 11px;
-  height: 11px;
+  top: var(--port-y, 50%);
+  width: var(--port-size);
+  height: var(--port-size);
   border-radius: 50%;
-  background: var(--node-body);
-  border: 2px solid var(--port-colour, var(--text-faint));
+  // Free: a filled disc. Wired: a ring with the canvas showing through, so the edge reads as
+  // plugged into a socket. That is the reference's convention, and it means "is this connected?"
+  // is answerable without following the wire.
+  background: var(--port-colour, var(--text-faint));
+  border: var(--port-ring) solid var(--port-colour, var(--text-faint));
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
   cursor: crosshair;
   transition:
     transform var(--tempo) var(--ease),
     background var(--tempo) var(--ease),
     box-shadow var(--tempo) var(--ease);
-
-  &:hover {
-    transform: scale(1.35);
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--port-colour, #888) 25%, transparent);
-  }
 }
 
 .port--in {
-  left: -6px;
+  left: calc(var(--node-pad) * -1);
+  transform: translate(-50%, -50%);
+
+  &:hover {
+    transform: translate(-50%, -50%) scale(1.25);
+  }
 }
 
 .port--out {
-  position: relative;
-  top: 0;
-  right: -18px;
-  margin-left: 8px;
+  right: calc(var(--node-pad) * -1);
+  transform: translate(50%, -50%);
+
+  &:hover {
+    transform: translate(50%, -50%) scale(1.25);
+  }
 }
 
-// Filled once something is attached, which is the fastest read of "is this wired?".
-//
-// `.f-connector-connected` is what the unified `fConnector` directive applies. The library's
-// styling notes also document `.f-node-input-connected` / `.f-node-output-connected`, but those
-// belong to the deprecated `fNodeInput` / `fNodeOutput` directives and never appear here.
+.port:hover {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 0 0 5px color-mix(in srgb, var(--port-colour, #888) 28%, transparent);
+}
+
+// A tall control anchors its port to the first line instead of to the middle of the box.
+.control--tall {
+  --port-y: 15px;
+}
+
+// `.f-connector-connected` is what the unified `fConnector` directive applies.
 .port.f-connector-connected {
-  background: var(--port-colour, var(--text-faint));
+  background: var(--canvas);
 }
 
 // While a connection is being dragged, only the ports that would accept it stay lit. Everything
-// else recedes, so the legal drop targets are the only things competing for attention.
+// else recedes, so the legal drop targets are the only things competing for attention — and
+// because the library is given the same compatibility rule the validator uses, "lit" and
+// "accepted" are the same set.
 :host-context(f-flow.f-connections-dragging) .port {
-  opacity: 0.25;
+  opacity: 0.2;
 }
 
 :host-context(f-flow.f-connections-dragging) .port.f-connector-connectable {
@@ -273,41 +348,78 @@
 @keyframes port-invite {
   0%,
   100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--port-colour, #888) 55%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--port-colour, #888) 60%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 6px transparent;
+    box-shadow: 0 0 0 7px transparent;
   }
 }
 
-// Collapsed: connectors stay rendered (a hidden connector loses its geometry) but stack invisibly
-// on the node edges so their edges still meet the node in a sensible place.
+// --- Collapsed ------------------------------------------------------------
+// Connectors stay rendered (a hidden connector loses its geometry) and stay spread down their own
+// edge, so a collapsed node's edges still arrive in a sensible order rather than converging on one
+// point.
+
 .stub {
   position: relative;
-  height: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 4px 10px;
+  background: var(--node-sunken);
+}
 
-  .port--stub {
-    top: -4px;
-    opacity: 0;
-    pointer-events: none;
-  }
+.stub__summary {
+  font-size: 10px;
+  color: var(--text-faint);
+}
 
-  .port--out {
-    position: absolute;
-    right: -6px;
+.stub__side {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  pointer-events: none;
+
+  .port {
+    position: relative;
+    top: auto;
     left: auto;
-    margin: 0;
+    right: auto;
+    width: 9px;
+    height: 9px;
+    border-width: 2px;
+    pointer-events: auto;
+  }
+}
+
+.stub__side--in {
+  left: 0;
+
+  .port {
+    transform: translateX(-50%);
+  }
+}
+
+.stub__side--out {
+  right: 0;
+
+  .port {
+    transform: translateX(50%);
   }
 }
 
 // --- Inline preview -------------------------------------------------------
 
 .preview {
-  margin: 4px 12px 8px;
+  margin: 0 var(--node-pad) 6px;
   padding: 6px 8px;
   max-height: 108px;
   overflow: auto;
-  background: var(--panel-sunken);
+  background: var(--canvas);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   font-family: 'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace;
@@ -329,10 +441,9 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  min-height: 19px;
-  padding: 2px 8px;
+  min-height: 21px;
+  padding: 2px 7px;
   background: var(--node-footer);
-  border-top: 1px solid var(--border-soft);
   border-radius: 0 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px);
   font-size: 10px;
   color: var(--text-faint);
@@ -351,10 +462,37 @@
   pointer-events: none;
 }
 
+.foot__power,
 .foot__state,
 .foot__message,
 .foot__timing {
   position: relative;
+}
+
+// The on/off switch, in the same corner the reference puts it.
+.foot__power {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--text-faint);
+  border-radius: 50%;
+  border: 1px solid transparent;
+  transition:
+    color var(--tempo) var(--ease),
+    border-color var(--tempo) var(--ease),
+    background var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  &.is-off {
+    color: var(--warn);
+    border-color: color-mix(in srgb, var(--warn) 50%, transparent);
+  }
 }
 
 .foot__state--ok {
@@ -375,6 +513,14 @@
 
 .foot__message--problem {
   color: color-mix(in srgb, var(--danger) 75%, var(--text));
+}
+
+.foot__message--off {
+  color: var(--warn);
+}
+
+.foot__message--ready {
+  color: var(--text-faint);
 }
 
 .foot__timing {

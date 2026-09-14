@@ -41,6 +41,16 @@ const PATHS: Readonly<Record<string, string>> = {
   warning: 'M12 4l9 16H3zM12 10v4M12 17v.5',
   clock: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16M12 8v4l3 2',
   link: 'M9 15l6-6M10.5 6.5 12 5a4.2 4.2 0 0 1 6 6l-1.5 1.5M13.5 17.5 12 19a4.2 4.2 0 0 1-6-6l1.5-1.5',
+  power: 'M12 4v8M7.5 6.8a7 7 0 1 0 9 0',
+  help: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M9.6 9.4a2.5 2.5 0 0 1 4.9.6c0 1.7-2.5 2-2.5 3.5M12 17v.5',
+  copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
+  close: 'M6 6l12 12M18 6 6 18',
+  home: 'M4 11l8-7 8 7M6 10v10h12V10',
+  drive: 'M4 6h16v5H4zM4 13h16v5H4zM7.5 8.5h.5M7.5 15.5h.5',
+  'arrow-up': 'M12 20V5M5 12l7-7 7 7',
+  'folder-open': 'M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1H6l-3 8zM6 10h15l-3 9H3z',
+  'file-blank': 'M6 3h8l4 4v14H6zM14 3v4h4',
+  select: 'M4 5h16M4 5v14M4 19h16M20 5v14',
 };
 
 @Component({

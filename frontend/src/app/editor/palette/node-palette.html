@@ -61,8 +61,10 @@
                     type="button"
                     fExternalItem
                     [fData]="spec.id"
-                    [attr.title]="spec.description || spec.label"
+                    [attr.title]="spec.description ? spec.label + ' — ' + spec.description : spec.label"
                     (dblclick)="addAtDefaultPosition(spec)"
+                    (keydown.enter)="addAtDefaultPosition(spec)"
+                    (keydown.space)="addAtDefaultPosition(spec)"
                   >
                     <span class="entry__bar"></span>
                     <app-icon class="entry__icon" [name]="spec.icon" [size]="13" />

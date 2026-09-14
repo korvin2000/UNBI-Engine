@@ -11,6 +11,7 @@
     type="button"
     [disabled]="!canRun()"
     [attr.title]="runTooltip()"
+    [attr.aria-label]="runTooltip()"
     (click)="run()"
   >
     <app-icon name="play" [size]="17" [filled]="true" [weight]="0" />
@@ -21,37 +22,74 @@
     type="button"
     [disabled]="!isRunning()"
     title="Stop the run"
+    aria-label="Stop the run"
     (click)="stop()"
   >
     <app-icon name="stop" [size]="15" [filled]="true" [weight]="0" />
   </button>
 </div>
 
-<div class="status" [attr.data-kind]="statusKind()">
-  <span class="status__bar" [style.width.%]="progressPercent()"></span>
-  <span class="status__text">{{ statusText() }}</span>
+<!--
+  The status pill doubles as the progress bar and, when the graph will not run, as the way into the
+  list of reasons. A disabled Run button with no route to "why" is the most common way an editor
+  strands someone.
+-->
+<div class="status-wrap">
+  <button
+    class="status"
+    type="button"
+    [attr.data-kind]="statusKind()"
+    [class.is-actionable]="problems().length > 0"
+    [attr.aria-expanded]="problemsOpen()"
+    [attr.title]="problems().length > 0 ? 'Show what is stopping the run' : statusText()"
+    (click)="toggleProblems()"
+  >
+    <span class="status__bar" [style.width.%]="progressPercent()"></span>
+    <span class="status__text">{{ statusText() }}</span>
+    @if (problems().length > 0) {
+      <app-icon class="status__more" name="chevron" [size]="12" />
+    }
+  </button>
+
+  @if (problemsOpen() && problems().length > 0) {
+    <div class="problems-backdrop" (pointerdown)="closeProblems()"></div>
+    <ul class="problems" role="list">
+      @for (problem of problems(); track $index) {
+        <li>
+          <app-icon name="warning" [size]="12" />
+          <span>{{ problem.message }}</span>
+        </li>
+      }
+    </ul>
+  }
 </div>
 
 <div class="actions">
-  <button type="button" [disabled]="!canUndo()" title="Undo" (click)="undo()">
+  <button type="button" [disabled]="!canUndo()" [attr.title]="undoTooltip()" aria-label="Undo" (click)="undo()">
     <app-icon name="undo" [size]="15" />
   </button>
-  <button type="button" [disabled]="!canRedo()" title="Redo" (click)="redo()">
+  <button type="button" [disabled]="!canRedo()" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" (click)="redo()">
     <app-icon name="redo" [size]="15" />
   </button>
 
   <span class="actions__divider"></span>
 
-  <button type="button" title="Load the example workflow" (click)="loadExample()">
+  <button type="button" title="Load the example workflow" aria-label="Load the example workflow" (click)="loadExample()">
     <app-icon name="star" [size]="15" />
   </button>
-  <button type="button" title="Open a workflow file" (click)="open()">
+  <button type="button" title="Open a workflow file" aria-label="Open a workflow file" (click)="open()">
     <app-icon name="open" [size]="15" />
   </button>
-  <button type="button" title="Save this workflow" (click)="save()">
+  <button type="button" title="Save this workflow" aria-label="Save this workflow" (click)="save()">
     <app-icon name="save" [size]="15" />
   </button>
-  <button type="button" title="Clear the canvas" (click)="clear()">
+  <button
+    type="button"
+    [disabled]="nodeCount() === 0"
+    title="Clear the canvas"
+    aria-label="Clear the canvas"
+    (click)="clear()"
+  >
     <app-icon name="trash" [size]="15" />
   </button>
 
@@ -60,7 +98,7 @@
   <span
     class="link"
     [class.is-live]="connection() === 'open'"
-    [attr.title]="'Engine ' + connection()"
+    [attr.title]="connection() === 'open' ? 'Connected to the engine' : 'The editor cannot reach the engine — Run is unavailable until it reconnects'"
   >
     <span class="link__dot"></span>
     {{ connection() === 'open' ? 'Connected' : connection() === 'connecting' ? 'Connecting' : 'Offline' }}

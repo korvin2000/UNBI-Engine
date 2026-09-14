@@ -5,7 +5,7 @@
   (fMoveNodes)="onMoveNodes($event)"
   (fCreateNode)="onCreateNode($event)"
   (fSelectionChange)="onSelectionChange($event)"
-  (fDeleteSelected)="onDeleteSelected()"
+  (fDeleteSelected)="onDeleteSelected($event)"
   (fNodesRendered)="onNodesRendered()"
 >
   <f-background>
@@ -14,8 +14,19 @@
 
   <f-selection-area />
 
-  <f-canvas [fZoom]="true" (fCanvasChange)="onCanvasChange()">
-    <f-connection-for-create fBehavior="floating" fType="segment" />
+  <f-canvas
+    [fZoom]="true"
+    [fZoomMinimum]="MIN_ZOOM"
+    [fZoomMaximum]="MAX_ZOOM"
+    [fZoomStep]="0.06"
+    [fZoomDblClickStep]="0"
+    (fCanvasChange)="onCanvasChange()"
+  >
+    <!--
+      The wire being dragged uses the same curve and the same endpoints as a settled connection, so
+      what you see while dragging is what you get when you let go.
+    -->
+    <f-connection-for-create fBehavior="fixed_center" fType="bezier" />
 
     <!--
       Nodes and connections are wrapped in ngProjectAs containers because they sit inside @for
@@ -30,6 +41,7 @@
           [fNodePosition]="entry.node.position"
           [node]="entry.node"
           [spec]="entry.spec"
+          (menuRequested)="openMenu($event)"
         />
       }
     </ng-container>
@@ -40,10 +52,12 @@
           [fConnectionId]="item.edge.id"
           [fSourceId]="item.source"
           [fTargetId]="item.target"
+          [class]="item.colourClass"
           [class.edge-invalid]="item.invalid"
           [class.edge-flowing]="item.flowing"
-          fBehavior="floating"
-          fType="segment"
+          [class.edge-muted]="item.muted"
+          fBehavior="fixed_center"
+          fType="bezier"
         />
       }
     </ng-container>
@@ -54,7 +68,9 @@
   <div class="empty">
     <app-icon name="grid" [size]="34" [weight]="1.2" />
     <p class="empty__title">Nothing here yet</p>
-    <p class="empty__hint">Drag a node from the left panel to begin, then wire the outputs together.</p>
+    <p class="empty__hint">
+      Drag a node from the left panel — or double-click one — then wire the outputs together.
+    </p>
   </div>
 }
 
@@ -62,13 +78,60 @@
   <button type="button" (click)="zoomIn()" aria-label="Zoom in" title="Zoom in">
     <app-icon name="plus" [size]="15" />
   </button>
+  <button class="viewport-controls__zoom" type="button" (click)="resetZoom()" title="Reset to 100%">
+    {{ zoomLabel() }}
+  </button>
   <button type="button" (click)="zoomOut()" aria-label="Zoom out" title="Zoom out">
     <app-icon name="minus" [size]="15" />
   </button>
-  <button type="button" (click)="fit()" aria-label="Fit to screen" title="Fit to screen">
+  <button type="button" (click)="fit()" aria-label="Fit to screen" title="Fit every node on screen">
     <app-icon name="fit" [size]="15" />
   </button>
-  <button class="viewport-controls__zoom" type="button" (click)="resetZoom()" title="Reset zoom">
-    {{ zoomLabel() }}
-  </button>
 </div>
+
+@if (menu(); as open) {
+  <!-- One backdrop, so a click anywhere — including on the canvas — dismisses the menu. -->
+  <div class="menu-backdrop" (pointerdown)="closeMenu()" (contextmenu)="$event.preventDefault(); closeMenu()"></div>
+  <div class="menu" role="menu" [style.left.px]="open.x" [style.top.px]="open.y">
+    @if (open.nodeId) {
+      <button type="button" role="menuitem" (click)="runMenu('collapse')">
+        <app-icon name="chevron" [size]="13" />
+        {{ open.collapsed ? 'Expand' : 'Collapse' }}
+      </button>
+      <button type="button" role="menuitem" (click)="runMenu('disable')">
+        <app-icon name="power" [size]="13" />
+        {{ open.disabled ? 'Switch on' : 'Switch off' }}
+      </button>
+      <button type="button" role="menuitem" (click)="runMenu('duplicate')">
+        <app-icon name="copy" [size]="13" />
+        Duplicate
+        <span class="menu__key">Ctrl D</span>
+      </button>
+      <button type="button" role="menuitem" (click)="runMenu('disconnect')">
+        <app-icon name="close" [size]="13" />
+        Disconnect
+      </button>
+      <span class="menu__divider"></span>
+      <button class="menu__danger" type="button" role="menuitem" (click)="runMenu('delete')">
+        <app-icon name="trash" [size]="13" />
+        Delete
+        <span class="menu__key">Del</span>
+      </button>
+    } @else {
+      <button type="button" role="menuitem" (click)="runMenu('fit')">
+        <app-icon name="fit" [size]="13" />
+        Fit to screen
+      </button>
+      <button type="button" role="menuitem" [disabled]="isEmpty()" (click)="runMenu('select-all')">
+        <app-icon name="select" [size]="13" />
+        Select all
+        <span class="menu__key">Ctrl A</span>
+      </button>
+      <span class="menu__divider"></span>
+      <button class="menu__danger" type="button" role="menuitem" [disabled]="isEmpty()" (click)="runMenu('clear')">
+        <app-icon name="trash" [size]="13" />
+        Clear the canvas
+      </button>
+    }
+  </div>
+}

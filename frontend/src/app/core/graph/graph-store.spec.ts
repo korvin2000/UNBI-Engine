@@ -63,7 +63,7 @@ class StubCatalog {
 }
 
 function node(id: string, type: string): WorkflowNode {
-  return { id, type, position: { x: 0, y: 0 }, values: {}, collapsed: false };
+  return { id, type, position: { x: 0, y: 0 }, values: {}, collapsed: false, disabled: false };
 }
 
 describe('GraphStore', () => {
@@ -155,6 +155,42 @@ describe('GraphStore', () => {
       expect(store.doc().edges[0].sourceNode).toBe('c');
     });
 
+    it('deletes a mixed selection of nodes and connections in one undo step', () => {
+      store.dispatch(commands.addNode(node('c', 'test.source'), 'Source'));
+      store.dispatch(
+        commands.connect({ id: 'e1', sourceNode: 'a', sourcePort: 'files', targetNode: 'b', targetPort: 'files' }),
+      );
+
+      store.dispatch(commands.removeSelection(['c'], ['e1']));
+
+      expect(store.nodeCount()).toBe(2);
+      expect(store.edgeCount()).toBe(0);
+
+      store.undo();
+      expect(store.nodeCount()).toBe(3);
+      expect(store.edgeCount()).toBe(1);
+    });
+
+    it('duplicates nodes with the edges between them, and no others', () => {
+      store.dispatch(commands.addNode(node('c', 'test.source'), 'Source'));
+      store.dispatch(
+        commands.connect({ id: 'e1', sourceNode: 'a', sourcePort: 'files', targetNode: 'b', targetPort: 'files' }),
+      );
+      store.dispatch(commands.setInputValue('b', 'count', 7));
+
+      let next = 0;
+      store.dispatch(commands.duplicateNodes(['a', 'b'], () => `copy-${next++}`));
+
+      expect(store.nodeCount()).toBe(5);
+      // The internal a -> b edge is copied; nothing dangles back to the originals.
+      expect(store.doc().edges).toHaveLength(2);
+      const copiedEdge = store.doc().edges.find((edge) => edge.id !== 'e1');
+      expect(copiedEdge?.sourceNode).toBe('copy-0');
+      expect(copiedEdge?.targetNode).toBe('copy-1');
+      expect(store.node('copy-1')?.values['count']).toBe(7);
+      expect(store.node('copy-0')?.position).toEqual({ x: 34, y: 34 });
+    });
+
     it('stores a widget value against the node', () => {
       store.dispatch(commands.setInputValue('b', 'count', 7));
       expect(store.node('b')?.values['count']).toBe(7);
@@ -188,6 +224,27 @@ describe('GraphStore', () => {
       );
 
       expect(store.issuesByEdge().get('e1')?.[0].message).toContain('expected a single Number');
+    });
+
+    it('ignores a node that is switched off, and everything downstream of it', () => {
+      store.dispatch(commands.addNode(node('a', 'test.source'), 'Source'));
+      store.dispatch(commands.addNode(node('b', 'test.sink'), 'Sink'));
+      // `b` has a required input with nothing wired into it, so the graph starts invalid.
+      expect(store.isRunnable()).toBe(false);
+
+      store.dispatch(commands.toggleDisabled('b'));
+
+      expect(store.issues()).toHaveLength(0);
+      expect(store.runnableCount()).toBe(1);
+      expect(store.isRunnable()).toBe(true);
+    });
+
+    it('has nothing to run once every node is switched off', () => {
+      store.dispatch(commands.addNode(node('a', 'test.source'), 'Source'));
+      store.dispatch(commands.toggleDisabled('a'));
+
+      expect(store.runnableCount()).toBe(0);
+      expect(store.isRunnable()).toBe(false);
     });
 
     it('detects a cycle and names the nodes in it', () => {

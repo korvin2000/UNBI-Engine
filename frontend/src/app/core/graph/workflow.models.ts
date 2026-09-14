@@ -19,6 +19,11 @@ export interface WorkflowNode {
   /** Widget values keyed by input key. An incoming edge overrides the value here. */
   readonly values: Readonly<Record<string, unknown>>;
   readonly collapsed: boolean;
+  /**
+   * Switched off from the node footer: kept on the canvas and in the saved file, but left out of
+   * the run. Everything downstream of it goes too — see {@link excludedFromRun}.
+   */
+  readonly disabled: boolean;
 }
 
 export interface WorkflowEdge {
@@ -72,4 +77,32 @@ export function inputValue(
 
 export function isConnected(doc: WorkflowDoc, nodeId: string, portKey: string): boolean {
   return doc.edges.some((edge) => edge.targetNode === nodeId && edge.targetPort === portKey);
+}
+
+/**
+ * Every node the run must leave out: the ones switched off, plus everything that feeds from them.
+ *
+ * A node whose producer was switched off cannot run either — it would fail for a missing input and
+ * report that as an error, which is not what the user asked for by flipping one switch. Excluding
+ * the whole downstream closure instead is both what chaiNNer does and the only reading under which
+ * the button means anything.
+ */
+export function excludedFromRun(doc: WorkflowDoc): ReadonlySet<string> {
+  const excluded = new Set(doc.nodes.filter((node) => node.disabled).map((node) => node.id));
+  if (excluded.size === 0) {
+    // The overwhelmingly common case, and this runs on every document change.
+    return excluded;
+  }
+  // Repeat until nothing new is reached: an edge list is not topologically ordered, so one pass
+  // would miss anything wired in an order the author happened to choose.
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const edge of doc.edges) {
+      if (excluded.has(edge.sourceNode) && !excluded.has(edge.targetNode)) {
+        excluded.add(edge.targetNode);
+        changed = true;
+      }
+    }
+  }
+  return excluded;
 }

@@ -83,6 +83,7 @@ export class WorkflowFileService {
         position: { x: 60, y: 140 },
         values: { pattern: '*', recursive: true, maxDepth: 8, limit: 2000 },
         collapsed: false,
+        disabled: false,
       },
       {
         id: 'filter',
@@ -90,6 +91,7 @@ export class WorkflowFileService {
         position: { x: 380, y: 160 },
         values: { extensions: 'txt, md, java, ts', mode: 'keep', minSize: 0 },
         collapsed: false,
+        disabled: false,
       },
       {
         id: 'search',
@@ -97,6 +99,7 @@ export class WorkflowFileService {
         position: { x: 700, y: 150 },
         values: { query: 'TODO', regex: false, caseSensitive: false },
         collapsed: false,
+        disabled: false,
       },
       {
         id: 'report',
@@ -104,6 +107,7 @@ export class WorkflowFileService {
         position: { x: 1020, y: 130 },
         values: { title: 'TODO Report', format: 'markdown', fileName: 'todo-report.md' },
         collapsed: false,
+        disabled: false,
       },
     ];
 
@@ -144,6 +148,7 @@ export function parseWorkflow(text: string): WorkflowDoc {
         position: { x: Number(node.position?.x ?? 0), y: Number(node.position?.y ?? 0) },
         values: node.values ?? {},
         collapsed: node.collapsed === true,
+        disabled: node.disabled === true,
       };
     }),
     edges: file.edges.map((edge, index) => {

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { GraphStore } from '../../core/graph/graph-store';
 import { RunStore } from '../../core/runtime/run-store';
 import { Icon } from '../../shared/icon';
@@ -7,9 +7,9 @@ import { WorkflowFileService } from '../workflow-file.service';
 /**
  * The top bar: identity, transport controls, run state and file actions.
  *
- * Run is disabled while the graph has validation problems, and the reason is on the button as a
- * tooltip — a disabled control with no explanation is the most common way an editor frustrates
- * someone.
+ * Run is disabled while the graph has validation problems, and the status pill next to it opens the
+ * list of those problems — a disabled control whose reason is only a tooltip is the most common way
+ * an editor strands someone.
  */
 @Component({
   selector: 'app-editor-toolbar',
@@ -21,7 +21,7 @@ import { WorkflowFileService } from '../workflow-file.service';
 export class EditorToolbar {
   private readonly graph = inject(GraphStore);
   private readonly files = inject(WorkflowFileService);
-  protected readonly runs = inject(RunStore);
+  private readonly runs = inject(RunStore);
 
   protected readonly canUndo = this.graph.canUndo;
   protected readonly canRedo = this.graph.canRedo;
@@ -31,6 +31,24 @@ export class EditorToolbar {
   protected readonly isRunning = this.runs.isRunning;
   protected readonly summary = this.runs.summary;
   protected readonly connection = this.runs.connection;
+
+  protected readonly problemsOpen = signal(false);
+
+  /**
+   * What Ctrl+Z would put back, named.
+   *
+   * "Undo" alone leaves the user guessing how far back one press goes; "Undo Add Scan Directory"
+   * does not.
+   */
+  protected readonly undoTooltip = computed(() =>
+    this.canUndo() ? `Undo ${this.graph.lastAction()} (Ctrl+Z)` : 'Nothing to undo',
+  );
+
+  /** Everything standing between the user and a run: validation issues, then engine rejections. */
+  protected readonly problems = computed(() => [
+    ...this.issues(),
+    ...this.runs.rejections().map((message) => ({ message })),
+  ]);
 
   protected readonly canRun = computed(
     () => this.graph.isRunnable() && !this.isRunning() && this.connection() === 'open',
@@ -43,13 +61,16 @@ export class EditorToolbar {
     if (this.nodeCount() === 0) {
       return 'Add some nodes first';
     }
+    if (this.graph.runnableCount() === 0) {
+      return 'Every node is switched off';
+    }
     const problems = this.issues();
     if (problems.length > 0) {
       return problems.length === 1
         ? problems[0].message
         : `${problems.length} problems, starting with: ${problems[0].message}`;
     }
-    return 'Run the workflow';
+    return 'Run the workflow (Ctrl+Enter)';
   });
 
   protected readonly progressPercent = computed(() => Math.round(this.runs.overallProgress() * 100));
@@ -63,11 +84,15 @@ export class EditorToolbar {
       const seconds = (finished.durationMillis / 1000).toFixed(2);
       return `${titleCase(finished.outcome)} in ${seconds}s`;
     }
-    const problems = this.issues();
+    const problems = this.problems();
     if (problems.length > 0) {
       return `${problems.length} ${problems.length === 1 ? 'problem' : 'problems'}`;
     }
-    return `${this.nodeCount()} nodes · ${this.edgeCount()} connections`;
+    // "skipped" rather than "off": the count includes nodes nobody switched off, only ones that
+    // happen to sit downstream of one that is.
+    const skipped = this.nodeCount() - this.graph.runnableCount();
+    const base = `${this.nodeCount()} nodes · ${this.edgeCount()} connections`;
+    return skipped > 0 ? `${base} · ${skipped} skipped` : base;
   });
 
   protected readonly statusKind = computed(() => {
@@ -78,8 +103,18 @@ export class EditorToolbar {
     if (finished) {
       return finished.outcome === 'COMPLETED' ? 'ok' : 'error';
     }
-    return this.issues().length > 0 ? 'warn' : 'idle';
+    return this.problems().length > 0 ? 'warn' : 'idle';
   });
+
+  protected toggleProblems(): void {
+    if (this.problems().length > 0) {
+      this.problemsOpen.update((open) => !open);
+    }
+  }
+
+  protected closeProblems(): void {
+    this.problemsOpen.set(false);
+  }
 
   protected run(): void {
     this.runs.start();

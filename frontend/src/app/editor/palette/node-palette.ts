@@ -94,7 +94,7 @@ export class NodePalette {
 
     this.graph.dispatch(
       commands.addNode(
-        { id: crypto.randomUUID(), type: spec.id, position, values: {}, collapsed: false },
+        { id: crypto.randomUUID(), type: spec.id, position, values: {}, collapsed: false, disabled: false },
         spec.label,
       ),
     );

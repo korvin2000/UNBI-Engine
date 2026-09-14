@@ -9,3 +9,10 @@
     <app-flow-canvas />
   </main>
 </div>
+
+<!--
+  One instance, mounted at the shell. A picker opened from inside a node would live in the canvas's
+  transformed, clipped layer — where a modal cannot cover the screen and would be scaled by the
+  zoom — so the widgets ask a service and the dialog renders here.
+-->
+<app-file-browser />

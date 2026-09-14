@@ -1,8 +1,9 @@
-<header class="head" fDragHandle>
+<header class="head" fDragHandle [attr.title]="spec().description" (dblclick)="toggleCollapsed()">
   <button
     class="head__collapse"
     type="button"
-    [attr.aria-label]="node().collapsed ? 'Expand' : 'Collapse'"
+    [attr.aria-label]="node().collapsed ? 'Expand node' : 'Collapse node'"
+    [attr.aria-expanded]="!node().collapsed"
     (click)="toggleCollapsed()"
     fDragBlocker
   >
@@ -14,136 +15,250 @@
     <span class="head__title">{{ spec().label }}</span>
   </span>
 
-  @if (status(); as run) {
-    @switch (run.state) {
-      @case ('RUNNING') {
-        <span class="head__badge head__badge--running" title="Running"></span>
-      }
-      @case ('FAILED') {
-        <app-icon class="head__badge head__badge--failed" name="warning" [size]="13" title="Failed" />
-      }
-      @case ('SKIPPED') {
-        <span class="head__badge head__badge--skipped" title="Skipped after an upstream failure">—</span>
+  <span class="head__state">
+    @if (node().disabled) {
+      <app-icon class="head__badge head__badge--off" name="power" [size]="12" title="Switched off" />
+    } @else if (bypassed()) {
+      <app-icon
+        class="head__badge head__badge--skipped"
+        name="power"
+        [size]="12"
+        title="Skipped: something upstream is switched off"
+      />
+    } @else if (status(); as run) {
+      @switch (run.state) {
+        @case ('RUNNING') {
+          <span class="head__badge head__badge--running" title="Running"></span>
+        }
+        @case ('FAILED') {
+          <app-icon class="head__badge head__badge--failed" name="warning" [size]="13" title="Failed" />
+        }
+        @case ('SKIPPED') {
+          <span class="head__badge head__badge--skipped" title="Skipped after an upstream failure">—</span>
+        }
       }
     }
-  }
-
-  <button class="head__remove" type="button" aria-label="Delete node" (click)="remove()" fDragBlocker>
-    <app-icon name="trash" [size]="12" />
-  </button>
+  </span>
 </header>
 
 @if (!node().collapsed) {
   <div class="body">
-    @for (row of rows(); track row.spec.key) {
-      <div class="row" [class.is-wired]="row.wired">
-        @if (row.spec.connectable) {
-          <div
-            class="port port--in"
-            [class]="row.portClass"
-            fConnector
-            fConnectorType="target"
-            [fConnectorId]="row.connectorId"
-            [attr.title]="row.spec.label"
-          ></div>
-        }
-
-        <!-- A toggle carries its own label, so it does not get a second one above it. -->
-        @if (row.spec.widget?.kind === 'toggle') {
-          <app-node-widget
-            [spec]="row.spec.widget!"
-            [value]="row.value"
-            [disabled]="row.widgetDisabled"
-            (valueChange)="setValue(row.spec.key, $event)"
-          >{{ row.spec.label }}</app-node-widget>
-        } @else if (row.spec.widget) {
-          <!-- A field: its label is centred above it. -->
-          <div class="row__label row__label--field">{{ row.spec.label }}</div>
-          <app-node-widget
-            [spec]="row.spec.widget"
-            [value]="row.value"
-            [disabled]="row.widgetDisabled"
-            (valueChange)="setValue(row.spec.key, $event)"
-          />
-        } @else {
-          <!-- Socket only: the label sits inline with its port, reading left to right into the node. -->
-          <div class="row__label row__label--socket">
-            <span>{{ row.spec.label }}</span>
-            @if (!row.spec.required) {
-              <span class="row__optional">optional</span>
+    @if (rows().length > 0) {
+      <section class="section section--in">
+        @for (row of rows(); track row.spec.key) {
+          <!-- The type colour is set on the row, not only on the port, so anything else in the row
+               that wants it — the "wired" badge — can read the same variable. -->
+          <div class="row" [class]="row.portClass">
+            @switch (row.kind) {
+              @case ('socket') {
+                <!-- Socket only: the label reads left to right out of its port, into the node. -->
+                <div class="line">
+                  <div
+                    class="port port--in"
+                    [class]="row.portClass"
+                    fConnector
+                    fConnectorType="target"
+                    fConnectorConnectableSide="left"
+                    [fConnectorId]="row.connectorId"
+                    [fConnectorCategory]="row.typeKey"
+                    [fConnectorSelfConnectable]="false"
+                    [attr.title]="row.portTitle"
+                    [attr.aria-label]="row.portTitle"
+                  ></div>
+                  <span class="line__label">{{ row.spec.label }}</span>
+                  @if (!row.spec.required) {
+                    <span class="line__optional">optional</span>
+                  }
+                  @if (row.spec.hint) {
+                    <app-icon class="line__hint" name="help" [size]="12" [attr.title]="row.spec.hint" />
+                  }
+                </div>
+              }
+              @case ('toggle') {
+                <!-- A toggle carries its own label, so it does not get a second one above it. -->
+                <div class="control">
+                  @if (row.spec.connectable) {
+                    <div
+                      class="port port--in"
+                      [class]="row.portClass"
+                      fConnector
+                      fConnectorType="target"
+                      fConnectorConnectableSide="left"
+                      [fConnectorId]="row.connectorId"
+                      [fConnectorCategory]="row.typeKey"
+                      [fConnectorSelfConnectable]="false"
+                      [attr.title]="row.portTitle"
+                      [attr.aria-label]="row.portTitle"
+                    ></div>
+                  }
+                  <app-node-widget
+                    [spec]="row.spec.widget!"
+                    [value]="row.value"
+                    [disabled]="row.widgetDisabled"
+                    (valueChange)="setValue(row.spec.key, $event)"
+                  >{{ row.spec.label }}</app-node-widget>
+                </div>
+              }
+              @default {
+                <!-- A field: its label is centred above the control, as in the reference UI. -->
+                <div class="row__label">
+                  {{ row.spec.label }}
+                  @if (row.wired) {
+                    <span class="row__driven" title="Driven by the connected edge">wired</span>
+                  }
+                </div>
+                <div class="control" [class.control--tall]="row.tall">
+                  @if (row.spec.connectable) {
+                    <div
+                      class="port port--in"
+                      [class]="row.portClass"
+                      fConnector
+                      fConnectorType="target"
+                      fConnectorConnectableSide="left"
+                      [fConnectorId]="row.connectorId"
+                      [fConnectorCategory]="row.typeKey"
+                      [fConnectorSelfConnectable]="false"
+                      [attr.title]="row.portTitle"
+                      [attr.aria-label]="row.portTitle"
+                    ></div>
+                  }
+                  <app-node-widget
+                    [spec]="row.spec.widget!"
+                    [value]="row.value"
+                    [disabled]="row.widgetDisabled"
+                    (valueChange)="setValue(row.spec.key, $event)"
+                  />
+                </div>
+              }
             }
           </div>
         }
-      </div>
+      </section>
+    }
+
+    @if (outputs().length > 0) {
+      <section class="section section--out">
+        @for (output of outputs(); track output.spec.key) {
+          <div class="row" [class]="output.portClass">
+            <div class="line line--out">
+              <span class="line__label">{{ output.spec.label }}</span>
+              <div
+                class="port port--out"
+                [class]="output.portClass"
+                fConnector
+                fConnectorType="source"
+                fConnectorConnectableSide="right"
+                [fConnectorId]="output.connectorId"
+                [fConnectorCategory]="output.typeKey"
+                [fCanBeConnectedTo]="output.canConnectTo"
+                [fConnectorSelfConnectable]="false"
+                [attr.title]="output.portTitle"
+                [attr.aria-label]="output.portTitle"
+              ></div>
+            </div>
+          </div>
+        }
+      </section>
     }
 
     @if (preview().length > 0) {
-      <div class="preview">
-        @for (line of preview(); track $index) {
-          <div class="preview__line">{{ line }}</div>
-        }
-      </div>
-    }
-
-    @for (output of outputs(); track output.spec.key) {
-      <div class="row row--out">
-        <span class="row__label row__label--out">{{ output.spec.label }}</span>
-        <div
-          class="port port--out"
-          [class]="output.portClass"
-          fConnector
-          fConnectorType="source"
-          [fConnectorId]="output.connectorId"
-          [attr.title]="output.spec.label"
-        ></div>
-      </div>
+      <section class="section section--log">
+        <div class="preview">
+          @for (line of preview(); track $index) {
+            <div class="preview__line">{{ line }}</div>
+          }
+        </div>
+      </section>
     }
   </div>
 } @else {
   <!--
     Collapsed nodes still render every connector. Hiding one with `display: none` would collapse its
-    geometry to a 0x0 point and drag its edges to the corner of the node (Foblex FF1006).
+    geometry to a 0x0 point and drag its edges to the corner of the node (Foblex FF1006), so they
+    stay laid out — spread down each edge — and simply lose their labels.
   -->
   <div class="stub">
-    @for (row of rows(); track row.spec.key) {
-      @if (row.spec.connectable) {
+    <div class="stub__side stub__side--in">
+      @for (row of rows(); track row.spec.key) {
+        @if (row.spec.connectable) {
+          <div
+            class="port port--stub"
+            [class]="row.portClass"
+            fConnector
+            fConnectorType="target"
+            fConnectorConnectableSide="left"
+            [fConnectorId]="row.connectorId"
+            [fConnectorCategory]="row.typeKey"
+            [fConnectorSelfConnectable]="false"
+            [attr.title]="row.portTitle"
+          ></div>
+        }
+      }
+    </div>
+    <span class="stub__summary">{{ summary() }}</span>
+    <div class="stub__side stub__side--out">
+      @for (output of outputs(); track output.spec.key) {
         <div
-          class="port port--in port--stub"
-          [class]="row.portClass"
+          class="port port--stub"
+          [class]="output.portClass"
           fConnector
-          fConnectorType="target"
-          [fConnectorId]="row.connectorId"
+          fConnectorType="source"
+          fConnectorConnectableSide="right"
+          [fConnectorId]="output.connectorId"
+          [fConnectorCategory]="output.typeKey"
+          [fCanBeConnectedTo]="output.canConnectTo"
+          [fConnectorSelfConnectable]="false"
+          [attr.title]="output.portTitle"
         ></div>
       }
-    }
-    @for (output of outputs(); track output.spec.key) {
-      <div
-        class="port port--out port--stub"
-        [class]="output.portClass"
-        fConnector
-        fConnectorType="source"
-        [fConnectorId]="output.connectorId"
-      ></div>
-    }
+    </div>
   </div>
 }
 
 <footer class="foot">
-  <span class="foot__progress" [style.width.%]="progressPercent()"></span>
+  <!-- Only while the node is actually working: a full amber bar left behind on a finished node
+       says "in progress" long after it stopped being true. -->
+  @if (status()?.state === 'RUNNING') {
+    <span class="foot__progress" [style.width.%]="progressPercent()"></span>
+  }
 
-  @if (problems().length > 0) {
+  <button
+    class="foot__power"
+    type="button"
+    [class.is-off]="node().disabled"
+    [attr.aria-pressed]="!node().disabled"
+    [attr.title]="node().disabled ? 'Switch this node back on' : 'Switch this node off — it and everything downstream are left out of the run'"
+    (click)="toggleDisabled()"
+    fDragBlocker
+  >
+    <app-icon name="power" [size]="11" />
+  </button>
+
+  @if (node().disabled) {
+    <span class="foot__message foot__message--off">Switched off</span>
+  } @else if (bypassed()) {
+    <span class="foot__message foot__message--off" title="Something upstream of this node is switched off">
+      Skipped — upstream is off
+    </span>
+  } @else if (problems().length > 0) {
     <app-icon class="foot__state foot__state--problem" name="warning" [size]="12" />
-    <span class="foot__message foot__message--problem">{{ problems()[0].message }}</span>
+    <span class="foot__message foot__message--problem" [attr.title]="problems()[0].message">
+      {{ problems()[0].message }}
+    </span>
   } @else if (status(); as run) {
     @if (run.state === 'FAILED') {
       <app-icon class="foot__state foot__state--problem" name="warning" [size]="12" />
-      <span class="foot__message foot__message--problem">{{ run.message }}</span>
+      <span class="foot__message foot__message--problem" [attr.title]="run.message">{{ run.message }}</span>
     } @else {
       @if (run.state === 'COMPLETED') {
         <app-icon class="foot__state foot__state--ok" name="check" [size]="12" [weight]="3" />
       }
       <span class="foot__message">{{ run.message }}</span>
     }
+  } @else {
+    <!-- Nothing to report: a bare tick, the way the reference leaves a node that is simply fine. -->
+    <app-icon class="foot__state foot__state--ok" name="check" [size]="12" [weight]="3" title="Ready" />
+    <span class="foot__message"></span>
   }
 
   @if (duration(); as elapsed) {

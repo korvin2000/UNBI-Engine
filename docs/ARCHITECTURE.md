@@ -15,12 +15,12 @@
 │  types/    PortType lattice mirror + assignability       │
 │  runtime/  RunStore ← RxJS stream of execution events    │
 └────────────┬──────────────────────────┬──────────────────┘
-             │ REST /api/catalog        │ WebSocket /ws/engine
-             │ (descriptors, once)      │ (commands ↑, events ↓)
+             │ REST /api/catalog, /fs   │ WebSocket /ws/engine
+             │ (descriptors; disk)      │ (commands ↑, events ↓)
 ┌────────────┴──────────────────────────┴──────────────────┐
 │  Spring Boot 4.1 / Java 26                                │
 │                                                           │
-│  transport/  WebSocket envelope codec, REST catalog       │
+│  transport/  WebSocket codec, REST catalog + filesystem   │
 │  engine/     scheduler, run lifecycle, cancellation       │
 │  registry/   NodeRegistry ← Spring injects List<NodeDef>  │
 │  nodes/      one class per node, auto-discovered          │
@@ -107,6 +107,7 @@ src/app/
     workflow-file.service.ts   save, open, the built-in example
   widgets/        one component, switching over the seven declared widget kinds
   shared/         inline SVG icons
+    file-browser/ the folder and file dialogs, and the service the widgets ask
 styles/           tokens.scss — the palette, per-category accents, per-type port colours
 ```
 
@@ -122,8 +123,30 @@ indirection. The first one that grows real complexity can be extracted then.
 - **Validation is derived state** (`computed`), never an imperative pass. Type errors and cycles
   recompute from the document; nothing has to remember to invalidate.
 
-Widget lookup mirrors the backend's plugin story: an `InjectionToken<WidgetRegistration[]>` with
-`multi: true`. A new widget kind is one provider.
+### Ports, wires, and why they are the way they are
+
+Three things about the canvas are worth stating, because each one is a decision that a later change
+could quietly undo:
+
+- **A port's centre is the node's border.** The row's horizontal padding is cancelled and the circle
+  pulled back by half its width, so the element the flow library measures *is* the socket. Endpoints
+  are `fBehavior="fixed_center"`, which anchors a wire at the connector's centre — so a wire ends in
+  the middle of the circle by construction, not by tuning offsets.
+- **The wire's colour is the port type's colour**, and `fCanBeConnectedTo` is given the set of input
+  types each output may legally reach — computed from the same `assignable` predicate the drop
+  handler and the backend validator use. An incompatible port therefore never lights up during a
+  drag: colour is not decoration, it is the rule.
+- **A path field is not a browser upload.** The engine is what opens the path, so the picker lists
+  the *engine's* disk over `GET /api/fs`. A browser file input could only ever hand back a sandboxed
+  handle the engine cannot use.
+
+### Nodes can be switched off
+
+The footer of every node carries an on/off switch. A node that is off — and everything downstream of
+it, computed as a closure — is left out of the graph sent to the engine entirely, rather than sent
+with a flag. The engine therefore needs no notion of a disabled node, and the graph it receives is
+always one it can run. Excluded nodes are also excluded from validation: reporting "missing input"
+on a node whose producer the user just switched off is noise, not a finding.
 
 ## 4. Execution model
 
@@ -193,6 +216,24 @@ Not decoration — every one of these was a real defect found by the rung above 
   containing brackets, so every list port silently lost its colour with nothing in the console.
 - **A node's last progress message was discarded on completion**, blanking the one useful thing it
   had reported.
+
+And, from the visual pass over the first UI — all four invisible in the console, and all four found
+only by looking at the pixels:
+
+- **A large hollow ring at the end of every wire.** The flow library renders an `r=8` circle at each
+  endpoint as the grab target for re-routing, and the theme's `connection-all()` mixin *strokes* it.
+  It is not a decoration to delete: it is kept, and painted with a transparent fill so it stays
+  hit-testable and stops being visible.
+- **Specificity, not source order, decided the wire colour.** The library ships its rule as
+  `f-flow .f-connection .f-connection-path, .f-flow .f-connection .f-connection-path` — the second
+  alternative is three classes, so a two-class override loses however late it appears. Every wire
+  silently fell back to one grey. The app's rules now mirror that selector shape.
+- **`calc(var(--fill) * 1%)` killed the slider.** Angular's `[style.--fill.%]` writes `40%`, not
+  `40`, so the multiplication produced `calc(40% * 1%)` — invalid, and one invalid stop discards the
+  whole gradient. The track rendered as nothing at all.
+- **Zoom buttons that did nothing.** `setScale` anchors on the flow origin unless given a point, and
+  does not repaint; the graph crawled toward the top-left corner and only moved when some later
+  gesture happened to trigger a redraw.
 
 ## 7. Decisions taken, with the reason
 

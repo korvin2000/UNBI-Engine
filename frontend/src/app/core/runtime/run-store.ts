@@ -1,7 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { GraphStore } from '../graph/graph-store';
-import { WorkflowDoc } from '../graph/workflow.models';
+import { WorkflowDoc, excludedFromRun } from '../graph/workflow.models';
 import { EngineSocket } from './engine-socket';
 import { NodeRunState, RunOutcome, WireGraph } from './engine-events';
 
@@ -148,8 +148,12 @@ export class RunStore {
     this.lastSummary.set(null);
     // Seed every node as queued immediately: waiting for run.started would leave the canvas inert
     // for a round trip after the user pressed Run.
-    this.statuses.set(new Map(this.graph.doc().nodes.map((node) => [node.id, IDLE])));
-    this.socket.send({ type: 'run', requestId: request, graph: toWireGraph(this.graph.doc()) });
+    const doc = this.graph.doc();
+    const excluded = excludedFromRun(doc);
+    this.statuses.set(
+      new Map(doc.nodes.filter((node) => !excluded.has(node.id)).map((node) => [node.id, IDLE])),
+    );
+    this.socket.send({ type: 'run', requestId: request, graph: toWireGraph(doc) });
   }
 
   cancel(): void {
@@ -178,21 +182,32 @@ export class RunStore {
   }
 }
 
-/** Strips editor-only fields; the engine has no use for `collapsed`. */
+/**
+ * Strips editor-only fields; the engine has no use for `collapsed`.
+ *
+ * Nodes switched off in the editor — and everything downstream of them — are left out entirely
+ * rather than sent with a flag, so the engine needs no notion of a disabled node and the graph it
+ * receives is always one it can actually run.
+ */
 export function toWireGraph(doc: WorkflowDoc): WireGraph {
+  const excluded = excludedFromRun(doc);
   return {
-    nodes: doc.nodes.map((node) => ({
-      id: node.id,
-      type: node.type,
-      values: { ...node.values },
-      position: { x: node.position.x, y: node.position.y },
-    })),
-    edges: doc.edges.map((edge) => ({
-      id: edge.id,
-      sourceNode: edge.sourceNode,
-      sourcePort: edge.sourcePort,
-      targetNode: edge.targetNode,
-      targetPort: edge.targetPort,
-    })),
+    nodes: doc.nodes
+      .filter((node) => !excluded.has(node.id))
+      .map((node) => ({
+        id: node.id,
+        type: node.type,
+        values: { ...node.values },
+        position: { x: node.position.x, y: node.position.y },
+      })),
+    edges: doc.edges
+      .filter((edge) => !excluded.has(edge.sourceNode) && !excluded.has(edge.targetNode))
+      .map((edge) => ({
+        id: edge.id,
+        sourceNode: edge.sourceNode,
+        sourcePort: edge.sourcePort,
+        targetNode: edge.targetNode,
+        targetPort: edge.targetPort,
+      })),
   };
 }

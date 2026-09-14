@@ -31,8 +31,19 @@ Then open <http://localhost:4200>. The status pill in the toolbar turns green wh
 found the engine.
 
 To try the shipped example, press the ★ button in the toolbar: it builds a
-*scan → filter → search → report* pipeline. Point **Scan Directory** at a folder, set a search term,
-and press ▶.
+*scan → filter → search → report* pipeline. Point **Scan Directory** at a folder — the folder button
+on the field opens a browser for the machine the *engine* runs on — set a search term, and press ▶.
+
+### Around the editor
+
+| | |
+|---|---|
+| Drag from the palette, or double-click an entry | add a node |
+| Drag from a port | connect — only compatible ports light up, and a wire takes its type's colour |
+| Right-click | node menu (collapse, switch off, duplicate, disconnect, delete) or canvas menu |
+| The switch in a node's footer | leave that node, and everything downstream of it, out of the run |
+| `Ctrl+Enter` · `Ctrl+Z` / `Ctrl+Shift+Z` · `Ctrl+D` · `Ctrl+A` · `Del` | run · undo/redo · duplicate · select all · delete |
+| Wheel, the `+`/`−` buttons, or the `%` label | zoom; the ⛶ button fits the whole graph |
 
 ### No JDK installed?
 

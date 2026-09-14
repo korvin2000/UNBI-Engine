@@ -1,8 +1,17 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal, viewChild } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import {
   FCanvasComponent,
   FCreateConnectionEvent,
   FCreateNodeEvent,
+  FDeleteSelectedEvent,
   FFlowModule,
   FMoveNodesEvent,
   FReassignConnectionEvent,
@@ -15,8 +24,29 @@ import { GraphStore } from '../../core/graph/graph-store';
 import { Point, connectorId } from '../../core/graph/workflow.models';
 import { RunStore } from '../../core/runtime/run-store';
 import { assignable } from '../../core/types/assignability';
+import { portColourKey } from '../../core/types/port-type';
 import { Icon } from '../../shared/icon';
 import { WorkflowNode } from './workflow-node';
+
+/** What a context menu can do. A union so the template cannot ask for anything else. */
+type MenuAction =
+  | 'collapse'
+  | 'disable'
+  | 'duplicate'
+  | 'disconnect'
+  | 'delete'
+  | 'fit'
+  | 'select-all'
+  | 'clear';
+
+interface OpenMenu {
+  /** `null` when the menu was opened on empty canvas rather than on a node. */
+  readonly nodeId: string | null;
+  readonly x: number;
+  readonly y: number;
+  readonly collapsed: boolean;
+  readonly disabled: boolean;
+}
 
 /**
  * The canvas.
@@ -31,16 +61,32 @@ import { WorkflowNode } from './workflow-node';
   imports: [FFlowModule, Icon, WorkflowNode],
   templateUrl: './flow-canvas.html',
   styleUrl: './flow-canvas.scss',
+  host: {
+    // Right-clicking a node is handled by the node, which stops propagation, so anything that
+    // reaches here happened on empty canvas.
+    '(contextmenu)': 'openCanvasMenu($event)',
+  },
 })
 export class FlowCanvas {
   private readonly graph = inject(GraphStore);
   private readonly catalog = inject(CatalogService);
   private readonly runs = inject(RunStore);
+  private readonly host = inject(ElementRef<HTMLElement>);
 
   private readonly canvas = viewChild.required(FCanvasComponent);
 
+  /**
+   * Zoom limits, shared with the wheel.
+   *
+   * The library clamps wheel zoom to the directive's own minimum and maximum; if the buttons used
+   * different numbers the canvas would have two disagreeing notions of "as far as it goes".
+   */
+  protected readonly MIN_ZOOM = 0.2;
+  protected readonly MAX_ZOOM = 2.5;
+
   protected readonly doc = this.graph.doc;
   protected readonly zoomLabel = signal('100%');
+  protected readonly menu = signal<OpenMenu | null>(null);
 
   /** Node plus its descriptor, resolved once per render rather than per binding. */
   protected readonly placed = computed(() => {
@@ -53,17 +99,27 @@ export class FlowCanvas {
   protected readonly edges = computed(() => {
     const invalid = this.graph.issuesByEdge();
     const statuses = this.runs.nodeStatuses();
-    return this.doc().edges.map((edge) => ({
-      edge,
-      source: connectorId.output(edge.sourceNode, edge.sourcePort),
-      target: connectorId.input(edge.targetNode, edge.targetPort),
-      invalid: invalid.has(edge.id),
-      // An edge animates once its producer is done and its consumer has not finished: that is
-      // exactly the window in which data is conceptually in flight.
-      flowing:
-        statuses.get(edge.sourceNode)?.state === 'COMPLETED' &&
-        statuses.get(edge.targetNode)?.state === 'RUNNING',
-    }));
+    const excluded = this.graph.excluded();
+    const specs = this.catalog.byId();
+    return this.doc().edges.map((edge) => {
+      const sourceSpec = specs.get(this.graph.node(edge.sourceNode)?.type ?? '');
+      const output = sourceSpec?.outputs.find((port) => port.key === edge.sourcePort);
+      return {
+        edge,
+        source: connectorId.output(edge.sourceNode, edge.sourcePort),
+        target: connectorId.input(edge.targetNode, edge.targetPort),
+        invalid: invalid.has(edge.id),
+        // An edge carries the colour of what flows along it, which is what lets you follow one
+        // kind of value through a large graph without reading a label.
+        colourClass: output ? `port-${portColourKey(output.type)}` : '',
+        muted: excluded.has(edge.sourceNode) || excluded.has(edge.targetNode),
+        // An edge animates once its producer is done and its consumer has not finished: that is
+        // exactly the window in which data is conceptually in flight.
+        flowing:
+          statuses.get(edge.sourceNode)?.state === 'COMPLETED' &&
+          statuses.get(edge.targetNode)?.state === 'RUNNING',
+      };
+    });
   });
 
   protected readonly isEmpty = computed(() => this.doc().nodes.length === 0);
@@ -79,7 +135,7 @@ export class FlowCanvas {
     if (!source || !target || source.direction !== 'out' || target.direction !== 'in') {
       return;
     }
-    if (!this.isCompatible(source, target)) {
+    if (source.nodeId === target.nodeId || !this.isCompatible(source, target)) {
       return;
     }
     this.graph.dispatch(
@@ -129,6 +185,7 @@ export class FlowCanvas {
           position: { x: at.x, y: at.y },
           values: {},
           collapsed: false,
+          disabled: false,
         },
         spec.label,
       ),
@@ -136,13 +193,115 @@ export class FlowCanvas {
   }
 
   protected onSelectionChange(event: FSelectionChangeEvent): void {
-    this.graph.select(event.nodeIds);
+    this.graph.select(event.nodeIds, event.connectionIds);
   }
 
-  protected onDeleteSelected(): void {
-    const selected = [...this.graph.selection()];
-    if (selected.length > 0) {
-      this.graph.dispatch(commands.removeNodes(selected));
+  /**
+   * Delete, from the library's own key handling.
+   *
+   * A selection can be a mix of nodes and connections; deleting only the nodes made a selected
+   * wire look undeletable.
+   */
+  protected onDeleteSelected(event: FDeleteSelectedEvent): void {
+    if (event.nodeIds.length > 0 || event.connectionIds.length > 0) {
+      this.graph.dispatch(commands.removeSelection(event.nodeIds, event.connectionIds));
+    }
+  }
+
+  // --- Context menu -------------------------------------------------------
+
+  protected openMenu(request: { nodeId: string; x: number; y: number }): void {
+    const node = this.graph.node(request.nodeId);
+    if (!node) {
+      return;
+    }
+    // Right-clicking a node that is not in the selection acts on that node, which is what every
+    // other editor does and what stops a menu from silently applying to something off screen.
+    if (!this.graph.selection().has(node.id)) {
+      this.graph.select([node.id]);
+    }
+    this.showMenu(request.x, request.y, node.id, node.collapsed, node.disabled);
+  }
+
+  protected openCanvasMenu(event: MouseEvent): void {
+    event.preventDefault();
+    this.showMenu(event.clientX, event.clientY, null, false, false);
+  }
+
+  private showMenu(
+    clientX: number,
+    clientY: number,
+    nodeId: string | null,
+    collapsed: boolean,
+    disabled: boolean,
+  ): void {
+    const rect = this.host.nativeElement.getBoundingClientRect();
+    const height = nodeId ? 190 : 128;
+    this.menu.set({
+      nodeId,
+      // Clamped inside the canvas so a menu opened near the right or bottom edge stays reachable.
+      x: Math.max(4, Math.min(clientX - rect.left, rect.width - 180)),
+      y: Math.max(4, Math.min(clientY - rect.top, rect.height - height)),
+      collapsed,
+      disabled,
+    });
+  }
+
+  protected closeMenu(): void {
+    this.menu.set(null);
+  }
+
+  protected runMenu(action: MenuAction): void {
+    const open = this.menu();
+    this.closeMenu();
+    if (!open) {
+      return;
+    }
+
+    switch (action) {
+      case 'fit':
+        this.fit();
+        return;
+      case 'select-all':
+        this.graph.select(this.doc().nodes.map((node) => node.id));
+        return;
+      case 'clear':
+        this.graph.clear();
+        return;
+      default:
+        break;
+    }
+
+    if (!open.nodeId) {
+      return;
+    }
+    const nodeId = open.nodeId;
+    const targets = this.graph.selection().has(nodeId) ? [...this.graph.selection()] : [nodeId];
+
+    switch (action) {
+      case 'collapse':
+        targets.forEach((id) => this.graph.dispatch(commands.toggleCollapsed(id)));
+        break;
+      case 'disable':
+        targets.forEach((id) => this.graph.dispatch(commands.toggleDisabled(id)));
+        break;
+      case 'duplicate':
+        this.graph.dispatch(commands.duplicateNodes(targets, () => crypto.randomUUID()));
+        break;
+      case 'disconnect': {
+        const attached = this.doc()
+          .edges.filter((edge) => targets.includes(edge.sourceNode) || targets.includes(edge.targetNode))
+          .map((edge) => edge.id);
+        if (attached.length > 0) {
+          this.graph.dispatch(commands.removeEdges(attached));
+        }
+        break;
+      }
+      case 'delete':
+        this.graph.dispatch(commands.removeNodes(targets));
+        break;
+      default:
+        break;
     }
   }
 
@@ -156,23 +315,21 @@ export class FlowCanvas {
    */
   protected onNodesRendered(): void {
     if (!this.isEmpty()) {
-      this.canvas().fitToScreen({ x: 80, y: 80 }, false);
+      this.canvas().fitToScreen({ x: 90, y: 90 }, false);
       this.syncZoomLabel();
     }
   }
 
   protected zoomIn(): void {
-    this.canvas().setScale(Math.min(this.canvas().getScale() * 1.2, 3));
-    this.syncZoomLabel();
+    this.zoomTo(this.canvas().getScale() * 1.25);
   }
 
   protected zoomOut(): void {
-    this.canvas().setScale(Math.max(this.canvas().getScale() / 1.2, 0.15));
-    this.syncZoomLabel();
+    this.zoomTo(this.canvas().getScale() / 1.25);
   }
 
   protected fit(): void {
-    this.canvas().fitToScreen({ x: 80, y: 80 }, true);
+    this.canvas().fitToScreen({ x: 90, y: 90 }, true);
     this.syncZoomLabel();
   }
 
@@ -185,6 +342,27 @@ export class FlowCanvas {
     this.syncZoomLabel();
   }
 
+  /**
+   * Zooms about the middle of the visible canvas.
+   *
+   * Two things the library will not do for a programmatic zoom, and both are why the buttons used
+   * to feel broken: `setScale` anchors on the flow origin unless it is given a point — so zooming
+   * walked the graph off toward the top-left corner — and it does not repaint, so nothing moved at
+   * all until some later gesture happened to trigger a redraw.
+   */
+  private zoomTo(scale: number): void {
+    const canvas = this.canvas();
+    const next = clamp(scale, this.MIN_ZOOM, this.MAX_ZOOM);
+    if (Math.abs(next - canvas.getScale()) < 0.0001) {
+      return;
+    }
+    const rect = this.host.nativeElement.getBoundingClientRect();
+    canvas.setScale(next, { x: rect.width / 2, y: rect.height / 2 });
+    canvas.redrawWithAnimation();
+    canvas.emitCanvasChangeEvent();
+    this.syncZoomLabel();
+  }
+
   private syncZoomLabel(): void {
     this.zoomLabel.set(`${Math.round(this.canvas().getScale() * 100)}%`);
   }
@@ -193,7 +371,8 @@ export class FlowCanvas {
    * The drag-time legality check.
    *
    * Runs the same assignability rule the backend uses, which is why refusing here and refusing
-   * there can never disagree — see `contract/type-assignability.json`.
+   * there can never disagree — see `contract/type-assignability.json`. The flow library is given
+   * the same rule up front (`fCanBeConnectedTo`), so this is the belt to that pair of braces.
    */
   private isCompatible(
     source: { nodeId: string; portKey: string },
@@ -209,4 +388,8 @@ export class FlowCanvas {
     }
     return assignable(output.type, input.type);
   }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }

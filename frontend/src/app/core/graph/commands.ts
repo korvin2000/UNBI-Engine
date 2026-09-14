@@ -37,6 +37,30 @@ export function removeNodes(nodeIds: readonly string[]): Command {
   };
 }
 
+/**
+ * Deletes a mixed selection in one step.
+ *
+ * A selection can hold both nodes and connections, and dispatching two commands would make undo
+ * take two presses to put back what one press removed.
+ */
+export function removeSelection(nodeIds: readonly string[], edgeIds: readonly string[]): Command {
+  const doomedNodes = new Set(nodeIds);
+  const doomedEdges = new Set(edgeIds);
+  const total = doomedNodes.size + doomedEdges.size;
+  return {
+    label: total === 1 ? 'Delete' : `Delete ${total} items`,
+    apply: (doc) => ({
+      nodes: doc.nodes.filter((node) => !doomedNodes.has(node.id)),
+      edges: doc.edges.filter(
+        (edge) =>
+          !doomedEdges.has(edge.id) &&
+          !doomedNodes.has(edge.sourceNode) &&
+          !doomedNodes.has(edge.targetNode),
+      ),
+    }),
+  };
+}
+
 export function removeEdges(edgeIds: readonly string[]): Command {
   const doomed = new Set(edgeIds);
   return {
@@ -97,6 +121,57 @@ export function toggleCollapsed(nodeId: string): Command {
         node.id === nodeId ? { ...node, collapsed: !node.collapsed } : node,
       ),
     }),
+  };
+}
+
+export function toggleDisabled(nodeId: string): Command {
+  return {
+    label: 'Toggle node',
+    apply: (doc) => ({
+      ...doc,
+      nodes: doc.nodes.map((node) =>
+        node.id === nodeId ? { ...node, disabled: !node.disabled } : node,
+      ),
+    }),
+  };
+}
+
+/**
+ * Copies nodes and the edges *between* them, offset so the copy is visibly a copy.
+ *
+ * Edges that leave the selection are dropped rather than duplicated: a second wire into an input
+ * that already has one would be immediately replaced, so keeping them would only look like a bug.
+ */
+export function duplicateNodes(
+  nodeIds: readonly string[],
+  newId: () => string,
+  offset: Point = { x: 34, y: 34 },
+): Command {
+  const wanted = new Set(nodeIds);
+  return {
+    label: nodeIds.length === 1 ? 'Duplicate node' : `Duplicate ${nodeIds.length} nodes`,
+    apply: (doc) => {
+      const originals = doc.nodes.filter((node) => wanted.has(node.id));
+      if (originals.length === 0) {
+        return doc;
+      }
+      const remap = new Map(originals.map((node) => [node.id, newId()]));
+      const copies = originals.map((node) => ({
+        ...node,
+        id: remap.get(node.id)!,
+        position: { x: node.position.x + offset.x, y: node.position.y + offset.y },
+        values: { ...node.values },
+      }));
+      const copiedEdges = doc.edges
+        .filter((edge) => remap.has(edge.sourceNode) && remap.has(edge.targetNode))
+        .map((edge) => ({
+          ...edge,
+          id: newId(),
+          sourceNode: remap.get(edge.sourceNode)!,
+          targetNode: remap.get(edge.targetNode)!,
+        }));
+      return { nodes: [...doc.nodes, ...copies], edges: [...doc.edges, ...copiedEdges] };
+    },
   };
 }
 

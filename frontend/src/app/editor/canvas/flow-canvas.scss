@@ -46,9 +46,9 @@ app-workflow-node {
   bottom: 14px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   padding: 3px;
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
   backdrop-filter: blur(8px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -61,19 +61,101 @@ app-workflow-node {
     height: 26px;
     color: var(--text-muted);
     border-radius: var(--radius-sm);
-    transition: color var(--tempo) var(--ease), background var(--tempo) var(--ease);
+    transition:
+      color var(--tempo) var(--ease),
+      background var(--tempo) var(--ease);
 
     &:hover {
       color: var(--text);
       background: var(--panel-raised);
     }
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+    }
   }
 }
 
 .viewport-controls__zoom {
-  width: 28px !important;
   font-size: 9.5px;
   font-variant-numeric: tabular-nums;
-  border-top: 1px solid var(--border);
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  color: var(--text-faint) !important;
+}
+
+// --- Node context menu ----------------------------------------------------
+
+.menu-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+}
+
+.menu {
+  position: absolute;
+  z-index: 41;
+  min-width: 172px;
+  padding: 4px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-dialog);
+  animation: menu-in 110ms var(--ease);
+
+  button {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 6px 9px;
+    border-radius: var(--radius-sm);
+    font-size: 12.5px;
+    color: var(--text);
+    text-align: left;
+
+    &:hover:not(:disabled),
+    &:focus-visible:not(:disabled) {
+      background: var(--accent-soft);
+      outline: none;
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    app-icon {
+      color: var(--text-faint);
+    }
+  }
+}
+
+.menu__danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+  color: var(--danger);
+
+  app-icon {
+    color: var(--danger);
+  }
+}
+
+.menu__key {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+
+.menu__divider {
+  display: block;
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
 }

@@ -29,7 +29,7 @@ export function defaultEngineConfig(): EngineConfig {
     };
   }
   return {
-    httpBase: 'http://localhost:8080',
-    socketUrl: 'ws://localhost:8080/ws/engine',
+    httpBase: 'http://localhost:8081',
+    socketUrl: 'ws://localhost:8081/ws/engine',
   };
 }

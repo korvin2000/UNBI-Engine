@@ -3,7 +3,7 @@ import { CatalogService } from '../catalog/catalog.service';
 import { NodeSpec } from '../catalog/catalog.models';
 import { assignable, explainRejection } from '../types/assignability';
 import { Command, documentsMatch } from './commands';
-import { EMPTY_DOC, WorkflowDoc, WorkflowNode } from './workflow.models';
+import { EMPTY_DOC, WorkflowDoc, WorkflowNode, excludedFromRun } from './workflow.models';
 
 /** A problem the editor found, shown on the offending node or edge. */
 export interface GraphIssue {
@@ -31,6 +31,8 @@ export class GraphStore {
 
   readonly doc = this.current.asReadonly();
   readonly selection = signal<ReadonlySet<string>>(new Set());
+  /** Connections are selectable too, and Delete has to reach them. */
+  readonly edgeSelection = signal<ReadonlySet<string>>(new Set());
 
   readonly canUndo = computed(() => this.past().length > 0);
   readonly canRedo = computed(() => this.future().length > 0);
@@ -38,6 +40,9 @@ export class GraphStore {
 
   readonly nodeCount = computed(() => this.current().nodes.length);
   readonly edgeCount = computed(() => this.current().edges.length);
+
+  /** Nodes switched off, plus everything downstream of them: not run, so not validated either. */
+  readonly excluded = computed(() => excludedFromRun(this.current()));
 
   /**
    * Validation, derived.
@@ -52,6 +57,7 @@ export class GraphStore {
     if (specs.size === 0) {
       return [];
     }
+    const skipped = this.excluded();
     const found: GraphIssue[] = [];
 
     for (const node of doc.nodes) {
@@ -61,6 +67,9 @@ export class GraphStore {
     }
 
     for (const edge of doc.edges) {
+      if (skipped.has(edge.sourceNode) || skipped.has(edge.targetNode)) {
+        continue;
+      }
       const source = specs.get(doc.nodes.find((n) => n.id === edge.sourceNode)?.type ?? '');
       const target = specs.get(doc.nodes.find((n) => n.id === edge.targetNode)?.type ?? '');
       const output = source?.outputs.find((port) => port.key === edge.sourcePort);
@@ -79,7 +88,7 @@ export class GraphStore {
 
     for (const node of doc.nodes) {
       const spec = specs.get(node.type);
-      if (!spec) {
+      if (!spec || skipped.has(node.id)) {
         continue;
       }
       for (const input of spec.inputs) {
@@ -109,7 +118,10 @@ export class GraphStore {
     return found;
   });
 
-  readonly isRunnable = computed(() => this.current().nodes.length > 0 && this.issues().length === 0);
+  /** How many nodes a run would actually execute. Zero means Run has nothing to do. */
+  readonly runnableCount = computed(() => this.current().nodes.length - this.excluded().size);
+
+  readonly isRunnable = computed(() => this.runnableCount() > 0 && this.issues().length === 0);
 
   /** Issues indexed by node, so a node component reads its own state in O(1). */
   readonly issuesByNode = computed(() => {
@@ -181,22 +193,23 @@ export class GraphStore {
     this.current.set(next);
   }
 
-  select(ids: readonly string[]): void {
-    this.selection.set(new Set(ids));
+  select(nodeIds: readonly string[], edgeIds: readonly string[] = []): void {
+    this.selection.set(new Set(nodeIds));
+    this.edgeSelection.set(new Set(edgeIds));
   }
 
   clear(): void {
     this.past.set([]);
     this.future.set([]);
     this.current.set(EMPTY_DOC);
-    this.selection.set(new Set());
+    this.select([]);
   }
 
   load(doc: WorkflowDoc): void {
     this.past.set([]);
     this.future.set([]);
     this.current.set(doc);
-    this.selection.set(new Set());
+    this.select([]);
   }
 
   node(id: string): WorkflowNode | undefined {

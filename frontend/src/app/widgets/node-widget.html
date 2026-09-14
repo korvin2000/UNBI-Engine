@@ -16,6 +16,7 @@
       <input
         class="field"
         type="text"
+        spellcheck="false"
         [attr.placeholder]="widget.placeholder"
         [value]="text()"
         [disabled]="disabled()"
@@ -30,22 +31,38 @@
       <input
         class="field field--number"
         type="number"
+        inputmode="decimal"
         [attr.min]="widget.min"
         [attr.max]="widget.max"
         [attr.step]="widget.step"
         [value]="numeric()"
         [disabled]="disabled()"
         (input)="onNumber($event)"
+        (blur)="onNumberCommit($event)"
         fDragBlocker
       />
       @if (widget.unit) {
         <span class="unit">{{ widget.unit }}</span>
       }
       <div class="spinner__buttons">
-        <button type="button" [disabled]="disabled()" (click)="step(1)" aria-label="Increase" fDragBlocker>
+        <button
+          type="button"
+          tabindex="-1"
+          [disabled]="disabled() || numeric() >= widget.max"
+          (click)="step(1)"
+          aria-label="Increase"
+          fDragBlocker
+        >
           <app-icon name="chevron" [size]="10" />
         </button>
-        <button type="button" [disabled]="disabled()" (click)="step(-1)" aria-label="Decrease" fDragBlocker>
+        <button
+          type="button"
+          tabindex="-1"
+          [disabled]="disabled() || numeric() <= widget.min"
+          (click)="step(-1)"
+          aria-label="Decrease"
+          fDragBlocker
+        >
           <app-icon name="chevron" [size]="10" />
         </button>
       </div>
@@ -60,6 +77,7 @@
         [attr.min]="widget.min"
         [attr.max]="widget.max"
         [attr.step]="widget.step"
+        [attr.aria-valuetext]="numeric()"
         [value]="numeric()"
         [disabled]="disabled()"
         [style.--fill.%]="sliderPercent()"
@@ -75,6 +93,7 @@
         [value]="numeric()"
         [disabled]="disabled()"
         (input)="onNumber($event)"
+        (blur)="onNumberCommit($event)"
         fDragBlocker
       />
     </div>
@@ -93,43 +112,101 @@
   }
 
   @case ('dropdown') {
-    <div class="select">
-      <select class="field" [value]="text()" [disabled]="disabled()" (change)="onSelect($event)" fDragBlocker>
-        @for (option of widget.options; track option.value) {
-          <option [value]="option.value">{{ option.label }}</option>
-        }
-      </select>
-      <app-icon class="select__chevron" name="chevron" [size]="13" />
+    <!--
+      A custom listbox rather than a bare `<select>`: the native popup is drawn by the OS in its own
+      palette, so on this canvas it arrives as a bright white sheet that belongs to no part of the
+      app. This one is also the only way to show the selected option in the node's own type colours.
+    -->
+    <div class="select" fDragBlocker>
+      <button
+        class="field select__button"
+        type="button"
+        role="combobox"
+        [attr.aria-expanded]="listOpen()"
+        aria-haspopup="listbox"
+        [disabled]="disabled()"
+        (click)="toggleList()"
+        (keydown)="onSelectKeydown($event)"
+      >
+        <span class="select__value">{{ selectedLabel() }}</span>
+        <app-icon class="select__chevron" [class.is-open]="listOpen()" name="chevron" [size]="13" />
+      </button>
+
+      @if (listOpen()) {
+        <div class="select__backdrop" (pointerdown)="closeList()"></div>
+        <ul class="select__list" role="listbox">
+          @for (option of widget.options; track option.value) {
+            <li>
+              <button
+                type="button"
+                role="option"
+                [attr.aria-selected]="option.value === text()"
+                [class.is-current]="option.value === text()"
+                (click)="pickOption(option.value)"
+              >
+                <app-icon name="check" [size]="11" [weight]="3" />
+                <span>{{ option.label }}</span>
+              </button>
+            </li>
+          }
+        </ul>
+      }
     </div>
   }
 
   @case ('directory') {
-    <div class="picker">
+    <div class="picker" [class.is-disabled]="disabled()">
       <app-icon class="picker__icon" name="folder" [size]="13" />
       <input
         class="field field--picker"
         type="text"
+        spellcheck="false"
         placeholder="Choose a folder…"
         [value]="text()"
         [disabled]="disabled()"
+        [attr.title]="text()"
         (input)="onText($event)"
         fDragBlocker
       />
+      <button
+        class="picker__browse"
+        type="button"
+        title="Browse the engine's folders"
+        aria-label="Browse folders"
+        [disabled]="disabled()"
+        (click)="browse('directory')"
+        fDragBlocker
+      >
+        <app-icon name="folder-open" [size]="13" />
+      </button>
     </div>
   }
 
   @case ('file') {
-    <div class="picker">
+    <div class="picker" [class.is-disabled]="disabled()">
       <app-icon class="picker__icon" name="document" [size]="13" />
       <input
         class="field field--picker"
         type="text"
+        spellcheck="false"
         placeholder="Choose a file…"
         [value]="text()"
         [disabled]="disabled()"
+        [attr.title]="text()"
         (input)="onText($event)"
         fDragBlocker
       />
+      <button
+        class="picker__browse"
+        type="button"
+        title="Browse the engine's files"
+        aria-label="Browse files"
+        [disabled]="disabled()"
+        (click)="browse('file')"
+        fDragBlocker
+      >
+        <app-icon name="folder-open" [size]="13" />
+      </button>
     </div>
   }
 }

@@ -2,7 +2,13 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { catchError, of, tap } from 'rxjs';
 import { ENGINE_CONFIG } from '../engine.config';
-import { CategoryGroup, NodeSpec, groupIntoCategories, parseCatalog } from './catalog.models';
+import {
+  CategoryGroup,
+  NodeSpec,
+  compatibleTargetTypes,
+  groupIntoCategories,
+  parseCatalog,
+} from './catalog.models';
 
 /**
  * Fetches and holds the node catalog.
@@ -25,6 +31,14 @@ export class CatalogService {
 
   readonly byId = computed(() => new Map(this.nodes().map((spec) => [spec.id, spec])));
   readonly categories = computed<readonly CategoryGroup[]>(() => groupIntoCategories(this.nodes()));
+
+  /**
+   * Which input types each output type may legally reach, for the canvas's drag-time filter.
+   *
+   * Derived rather than stored: it follows entirely from the catalog, so there is no moment at
+   * which the two can be out of step. See `compatibleTargetTypes`.
+   */
+  readonly compatibleTargets = computed(() => compatibleTargetTypes(this.nodes()));
 
   load(): void {
     if (this.loadState() === 'loading') {

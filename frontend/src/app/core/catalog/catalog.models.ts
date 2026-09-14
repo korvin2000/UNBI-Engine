@@ -1,4 +1,5 @@
-import { PortType, parsePortType } from '../types/port-type';
+import { assignable } from '../types/assignability';
+import { PortType, parsePortType, typeKey } from '../types/port-type';
 
 /**
  * The node catalog, as served by `GET /api/catalog`.
@@ -110,6 +111,52 @@ function parseOutput(raw: unknown): NodeOutputSpec {
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+/**
+ * Category given to a connector nothing may connect to.
+ *
+ * The flow library reads an *empty* allow-list as "no restriction", so an output with no legal
+ * target anywhere in the catalog has to be given a category that exists but matches nothing.
+ * Without this the one genuinely incompatible case would be the one case that connects to anything.
+ */
+export const NO_COMPATIBLE_TARGET = '__no-compatible-target__';
+
+/**
+ * Which input types each output type may legally reach, keyed by {@link typeKey}.
+ *
+ * This is what the canvas hands the flow library as a per-connector allow-list, so an illegal drop
+ * is refused *while the wire is in the air* rather than silently ignored when it lands. The rule is
+ * {@link assignable} — the same predicate the drop handler and the backend validator use, which is
+ * why the three cannot disagree about what "compatible" means.
+ *
+ * A catalog has tens of ports and this runs once per load, so the quadratic scan costs nothing and
+ * buys an exact answer rather than a heuristic.
+ */
+export function compatibleTargetTypes(
+  nodes: readonly NodeSpec[],
+): ReadonlyMap<string, readonly string[]> {
+  const inputs = new Map<string, PortType>();
+  const outputs = new Map<string, PortType>();
+  for (const spec of nodes) {
+    for (const input of spec.inputs) {
+      if (input.connectable) {
+        inputs.set(typeKey(input.type), input.type);
+      }
+    }
+    for (const output of spec.outputs) {
+      outputs.set(typeKey(output.type), output.type);
+    }
+  }
+
+  const result = new Map<string, readonly string[]>();
+  for (const [key, type] of outputs) {
+    const reachable = [...inputs.entries()]
+      .filter(([, candidate]) => assignable(type, candidate))
+      .map(([candidateKey]) => candidateKey);
+    result.set(key, reachable.length > 0 ? reachable : [NO_COMPATIBLE_TARGET]);
+  }
+  return result;
 }
 
 /**

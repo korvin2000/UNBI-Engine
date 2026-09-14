@@ -1,0 +1,391 @@
+// The picker dialog. Rendered once by the shell, above everything, so it is never clipped by the
+// transformed canvas the widgets that call it live inside.
+
+:host {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: contents;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 15, 0.62);
+  backdrop-filter: blur(2px);
+  animation: fade-in 120ms var(--ease);
+}
+
+.dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 92vw);
+  height: min(560px, 86vh);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
+  overflow: hidden;
+  animation: dialog-in 150ms var(--ease);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 10px)) scale(0.985);
+  }
+}
+
+// --- Head -----------------------------------------------------------------
+
+.dialog__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent);
+}
+
+.dialog__title {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dialog__close {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: var(--text-faint);
+  border-radius: var(--radius-sm);
+
+  &:hover {
+    color: var(--text);
+    background: var(--panel-raised);
+  }
+}
+
+// --- Path bar -------------------------------------------------------------
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bar__up {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+
+  &:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--panel-raised);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}
+
+// The crumbs are the fast way to jump back up; the text box is the fast way to jump anywhere.
+.crumbs {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.crumbs__item {
+  padding: 3px 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+
+  &:hover {
+    color: var(--text);
+    background: var(--panel-raised);
+  }
+}
+
+.crumbs__sep {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.bar__path {
+  flex: 1.4;
+  min-width: 120px;
+  padding: 5px 9px;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: 'Cascadia Code', ui-monospace, monospace;
+  outline: none;
+
+  &:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+}
+
+.bar__go {
+  flex: none;
+  padding: 5px 11px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+
+  &:hover {
+    color: var(--text);
+    background: var(--panel-raised);
+  }
+}
+
+// --- Body -----------------------------------------------------------------
+
+.dialog__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.roots {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+  width: 128px;
+  padding: 8px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.roots__item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  text-align: left;
+
+  &:hover {
+    color: var(--text);
+    background: var(--panel-raised);
+  }
+
+  &.is-current {
+    color: var(--text);
+    background: var(--accent-soft);
+  }
+}
+
+.listing {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.listing__filter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-faint);
+
+  input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    font-size: 12.5px;
+    color: var(--text);
+
+    &::placeholder {
+      color: var(--text-faint);
+    }
+
+    &::-webkit-search-cancel-button {
+      appearance: none;
+    }
+  }
+}
+
+.listing__scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.listing__error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.listing__empty {
+  margin: 28px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: left;
+
+  app-icon {
+    color: var(--text-faint);
+  }
+
+  &:hover {
+    background: var(--panel-raised);
+    color: var(--text);
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
+
+  &.is-selected {
+    background: var(--accent-soft);
+    color: var(--text);
+  }
+}
+
+.entry--dir app-icon {
+  color: var(--warn);
+}
+
+.entry__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry__size,
+.entry__date {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.entry__size {
+  width: 66px;
+  text-align: right;
+}
+
+.entry__date {
+  width: 84px;
+  text-align: right;
+}
+
+// --- Foot -----------------------------------------------------------------
+
+.dialog__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-sunken);
+}
+
+.dialog__result {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  font-size: 11.5px;
+  font-family: 'Cascadia Code', ui-monospace, monospace;
+  color: var(--text-muted);
+}
+
+.dialog__button {
+  flex: none;
+  padding: 6px 16px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--text);
+
+  &:hover:not(:disabled) {
+    border-color: var(--node-border-hover);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.dialog__button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+
+  &:hover:not(:disabled) {
+    background: color-mix(in srgb, #fff 12%, var(--accent));
+  }
+}

@@ -1,41 +1,44 @@
+@use 'sass:color';
+
 // Design tokens.
 //
 // Custom properties rather than SCSS variables: node accent colours are chosen at runtime from the
 // descriptor the backend served, so they have to be settable from a binding. SCSS still does the
 // work that belongs at build time (the accent map below), which keeps the runtime surface small.
 //
-// The palette is taken from chaiNNer: a near-black blue ground, panels a shade above it, node
-// bodies a shade above that, and saturated per-category accents carrying almost all of the colour.
+// The greys are sampled from chaiNNer itself (`screenshots/example1.png`, `example4.png`) rather
+// than eyeballed, which is why they look right next to the reference rather than merely dark:
+//   canvas #1f252f · node body #303948 · sunken strips and footer #282f3c · field outline #4b525f.
 
 :root {
   // --- Ground -------------------------------------------------------------
-  --ground:          #0e1320;
-  --canvas:          #131a29;
-  --canvas-dot:      #262f47;
-  --panel:           #151c2c;
-  --panel-raised:    #1b2334;
-  --panel-sunken:    #101623;
+  --ground:          #171d27;
+  --canvas:          #1f252f;
+  --canvas-dot:      #2e3646;
+  --panel:           #1a202b;
+  --panel-raised:    #262d3b;
+  --panel-sunken:    #151a23;
 
   // --- Node surfaces ------------------------------------------------------
-  --node-body:       #262d3d;
-  --node-header:     #2f3546;
-  --node-footer:     #212836;
-  --node-field:      #1c2231;
-  --node-border:     #3a4256;
-  --node-border-hover: #4d5670;
+  --node-body:       #303948;
+  // Label strips, inline previews and the footer sit a step below the body, exactly as in the
+  // reference: the eye reads the node as bands rather than as one flat rectangle.
+  --node-sunken:     #282f3c;
+  --node-footer:     #282f3c;
+  --node-field:      transparent;
+  --node-border:     #4b525f;
+  --node-border-hover: #6b7385;
 
   // --- Lines and text -----------------------------------------------------
-  --border:          #232b40;
-  --border-soft:     #1d2437;
-  --text:            #e6ebf5;
-  --text-muted:      #97a2ba;
-  --text-faint:      #6b7690;
+  --border:          #2a323f;
+  --border-soft:     #232a36;
+  --text:            #eaeded;
+  --text-muted:      #a9b2c1;
+  --text-faint:      #7b8494;
 
   // --- Interaction --------------------------------------------------------
   --accent:          #3f8cff;
-  --accent-soft:     rgba(63, 140, 255, 0.16);
-  --edge:            #dd8140;
-  --edge-active:     #ffb066;
+  --accent-soft:     rgba(63, 140, 255, 0.18);
   --selection:       #63a4ff;
 
   // --- Status -------------------------------------------------------------
@@ -48,7 +51,12 @@
   --radius-sm:       4px;
   --radius:          6px;
   --radius-lg:       10px;
-  --node-width:      248px;
+  --node-width:      252px;
+  // Horizontal padding inside a node body. Ports are positioned against the node border by
+  // cancelling exactly this, so the two must stay in step — hence one variable.
+  --node-pad:        12px;
+  --port-size:       14px;
+  --port-ring:       2.5px;
 
   // --- Motion -------------------------------------------------------------
   // One duration for anything the user initiated, one slower for ambient feedback.
@@ -56,9 +64,10 @@
   --tempo-slow:      300ms;
   --ease:            cubic-bezier(0.3, 0.8, 0.4, 1);
 
-  --shadow-node:     0 4px 14px rgba(0, 0, 0, 0.45);
-  --shadow-node-selected: 0 0 0 1px var(--selection), 0 8px 26px rgba(0, 0, 0, 0.55);
+  --shadow-node:     0 5px 18px rgba(0, 0, 0, 0.5);
+  --shadow-node-selected: 0 8px 26px rgba(0, 0, 0, 0.6);
   --shadow-panel:    0 8px 30px rgba(0, 0, 0, 0.5);
+  --shadow-dialog:   0 24px 70px rgba(0, 0, 0, 0.65);
 
   font-synthesis-weight: none;
 }
@@ -68,14 +77,18 @@
 // The backend names an accent (`amber`, `sky`, ...) and the frontend owns what that looks like.
 // A node pack therefore cannot dictate the palette, which is what stops a third-party pack from
 // making the canvas incoherent.
+// The header is this colour tinted with the category accent. A build-time value rather than a
+// custom property: the tint is mixed by Sass in the map below, and Sass cannot read a custom one.
+$node-header-base: #3a4152;
+
 $accents: (
-  'rose':    #e05563,
-  'amber':   #dd8140,
-  'sky':     #3f8cff,
+  'rose':    #d05463,
+  'amber':   #d98b45,
+  'sky':     #4a8fd6,
   'violet':  #8b6ce0,
   'emerald': #3faa72,
   'teal':    #38a89d,
-  'slate':   #6b7690,
+  'slate':   #7b8494,
 );
 
 @each $name, $colour in $accents {
@@ -83,30 +96,34 @@ $accents: (
     --accent-node: #{$colour};
     --accent-node-dim: #{rgba($colour, 0.18)};
     --accent-node-glow: #{rgba($colour, 0.45)};
+    // The tinted header, mixed at build time so no colour-mix runs per node per frame.
+    --accent-node-header: #{color.mix($colour, $node-header-base, 17%)};
   }
 }
 
 :root {
   // Fallback for a pack that names an accent this build does not know.
-  --accent-node: #6b7690;
-  --accent-node-dim: rgba(107, 118, 144, 0.18);
-  --accent-node-glow: rgba(107, 118, 144, 0.45);
+  --accent-node: #7b8494;
+  --accent-node-dim: rgba(123, 132, 148, 0.18);
+  --accent-node-glow: rgba(123, 132, 148, 0.45);
+  --accent-node-header: #3f4655;
 }
 
 // Port colours by type.
 //
 // The same type is the same colour everywhere in the graph, which is what lets you trace a
-// pipeline without reading a single label.
+// pipeline without reading a single label — and, because a connection is only legal between
+// compatible types, colour is also the rule: like plugs into like.
 $port-types: (
-  'Text':      #48bb78,
-  'Number':    #4299e1,
-  'Boolean':   #ecc94b,
-  'Directory': #b794f4,
-  'FileRef':   #ed8936,
-  'TextMatch': #f56565,
+  'Text':      #57c98a,
+  'Number':    #3183cf,
+  'Boolean':   #e0b83c,
+  'Directory': #7d5ccc,
+  'FileRef':   #ed9f5d,
+  'TextMatch': #e5646d,
   'FileEdit':  #38b2ac,
-  'Union':     #ed64a6,
-  'Any':       #a0aec0,
+  'Union':     #e06fb0,
+  'Any':       #9aa4b8,
 );
 
 @each $name, $colour in $port-types {

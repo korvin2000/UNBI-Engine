@@ -16,13 +16,19 @@
 // parts of the default look this app wants.
 //
 // Omitted on purpose:
-//   node/group/grouping — this app draws its own nodes (see workflow-node.scss)
-//   connector           — ports are positioned and coloured per port type by the node component
-//   resize/rotate handle — neither gesture is enabled
+//   node/group/grouping   — this app draws its own nodes (see workflow-node.scss)
+//   connector             — ports are positioned and coloured per port type by the node component
+//   resize/rotate handle  — neither gesture is enabled
+//   connection-drag-handles — `connection-all()` would pull this in, and it *strokes* the r=8
+//                           circle the library puts at each end of every edge. That is where the
+//                           large hollow ring at the end of each connection came from: it is a
+//                           reassign grab target, not a decoration, so it is kept and made
+//                           invisible below rather than drawn.
 @include flow-theme.theme-tokens();
 @include flow-theme.flow-canvas();
 @include flow-theme.drag-handle();
-@include flow-theme.connection-all();
+@include flow-theme.connection();
+@include flow-theme.connection-markers();
 @include flow-theme.external-item-all();
 @include flow-theme.plugins();
 
@@ -35,10 +41,15 @@
   --ff-flow-font-family: inherit;
   --ff-flow-font-size: 13px;
   --ff-color-accent: var(--accent);
-  --ff-connection-color: var(--edge);
+  // Plain value, not `var(--port-colour, …)`: a `var()` inside a custom property is substituted
+  // where the property is *declared*, so writing it here would freeze the root's fallback into
+  // every edge. Per-type edge colour is applied on the connection element instead, below.
+  --ff-connection-color: #9aa4b8;
   --ff-connection-color-selected: var(--selection);
   --ff-selection-area-background-color: var(--accent-soft);
   --ff-selection-area-border-color: var(--selection);
+  // A generous invisible hit area: an edge is two pixels wide and nobody can click two pixels.
+  --ff-connection-hit-width: 16;
 }
 
 * {
@@ -116,21 +127,37 @@ f-flow {
   height: 100%;
 }
 
-.f-connection {
+// An edge takes the colour of the port type it carries: the node component puts a `port-<Type>`
+// class on the connection, which resolves `--port-colour`, which every rule below reads.
+//
+// The two-selector shape is not decoration. The library ships this rule as
+// `f-flow .f-connection .f-connection-path, .f-flow .f-connection .f-connection-path` — and that
+// second alternative is three classes, which outranks any two-class selector no matter how late it
+// appears in the file. Mirroring the shape puts these rules on equal specificity, where being
+// later is what decides.
+f-flow .f-connection,
+.f-flow .f-connection {
+  // The library renders a circle of radius 8 at each end (two, if the start is reassignable) as
+  // the grab target for re-routing a wire. It must keep its geometry to stay grabbable, so it is
+  // painted with a transparent fill — still hit-tested, never seen.
   .f-connection-drag-handle {
-    stroke-width: 18;
+    fill: transparent;
+    stroke: none;
   }
 
   .f-connection-path {
-    stroke: var(--edge);
+    stroke: var(--port-colour, #9aa4b8);
     stroke-width: 2;
     fill: none;
-    transition: stroke var(--tempo) var(--ease), stroke-width var(--tempo) var(--ease);
+    transition:
+      stroke var(--tempo) var(--ease),
+      stroke-width var(--tempo) var(--ease),
+      opacity var(--tempo) var(--ease);
   }
 
   &:hover .f-connection-path {
-    stroke: var(--edge-active);
-    stroke-width: 2.5;
+    stroke: color-mix(in srgb, #fff 35%, var(--port-colour, #9aa4b8));
+    stroke-width: 3;
   }
 
   &.f-selected .f-connection-path {
@@ -144,10 +171,17 @@ f-flow {
     stroke-dasharray: 6 4;
   }
 
+  // Attached to a node that is switched off, so nothing will flow along it.
+  &.edge-muted .f-connection-path {
+    opacity: 0.3;
+    stroke-dasharray: 3 5;
+  }
+
   // While the run is live, edges whose producer has finished carry a travelling dash. Pure CSS on
   // stroke-dashoffset, so a hundred animated edges cost no JavaScript per frame.
   &.edge-flowing .f-connection-path {
-    stroke: var(--edge-active);
+    stroke: color-mix(in srgb, #fff 45%, var(--port-colour, #9aa4b8));
+    stroke-width: 3;
     stroke-dasharray: 7 7;
     animation: edge-flow 0.6s linear infinite;
   }
@@ -159,11 +193,19 @@ f-flow {
   }
 }
 
-.f-connection-for-create .f-connection-path {
-  stroke: var(--edge-active);
-  stroke-width: 2;
-  stroke-dasharray: 5 4;
-  fill: none;
+f-flow .f-connection-for-create,
+.f-flow .f-connection-for-create {
+  .f-connection-path {
+    stroke: var(--text-muted);
+    stroke-width: 2;
+    stroke-dasharray: 5 4;
+    fill: none;
+  }
+
+  .f-connection-drag-handle {
+    fill: transparent;
+    stroke: none;
+  }
 }
 
 // The dotted grid. Two layers so the canvas reads as paper rather than as a texture.

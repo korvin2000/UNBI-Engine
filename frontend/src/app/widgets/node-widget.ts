@@ -1,6 +1,7 @@
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { FFlowModule } from '@foblex/flow';
 import { WidgetSpec } from '../core/catalog/catalog.models';
+import { FileBrowserService } from '../shared/file-browser/file-browser.service';
 import { Icon } from '../shared/icon';
 
 /**
@@ -23,6 +24,8 @@ import { Icon } from '../shared/icon';
   },
 })
 export class NodeWidget {
+  private readonly browser = inject(FileBrowserService);
+
   readonly spec = input.required<WidgetSpec>();
   readonly value = input<unknown>(null);
   /** True when an edge drives this input, in which case the widget shows the takeover instead. */
@@ -30,12 +33,24 @@ export class NodeWidget {
 
   readonly valueChange = output<unknown>();
 
+  protected readonly listOpen = signal(false);
+
   protected readonly text = computed(() => (this.value() == null ? '' : String(this.value())));
   protected readonly numeric = computed(() => {
     const raw = Number(this.value());
     return Number.isFinite(raw) ? raw : 0;
   });
   protected readonly checked = computed(() => this.value() === true || this.value() === 'true');
+
+  /** The dropdown shows a label, not the value the graph stores. */
+  protected readonly selectedLabel = computed(() => {
+    const spec = this.spec();
+    if (spec.kind !== 'dropdown') {
+      return '';
+    }
+    const current = this.text();
+    return spec.options.find((option) => option.value === current)?.label ?? current;
+  });
 
   /** Where the slider thumb sits, as a percentage, for the filled-track gradient. */
   protected readonly sliderPercent = computed(() => {
@@ -66,12 +81,29 @@ export class NodeWidget {
     }
   }
 
-  protected onToggle(event: Event): void {
-    this.valueChange.emit((event.target as HTMLInputElement).checked);
+  /**
+   * Clamps on the way out of the field.
+   *
+   * Clamping per keystroke makes a number box impossible to type in — typing `1` on the way to
+   * `100` in a 10..999 field would snap to 10 and eat the rest. Leaving the field is the moment the
+   * user has finished saying what they meant.
+   */
+  protected onNumberCommit(event: Event): void {
+    const spec = this.spec();
+    if (spec.kind !== 'number' && spec.kind !== 'slider') {
+      return;
+    }
+    const input = event.target as HTMLInputElement;
+    const parsed = Number(input.value);
+    const settled = Number.isFinite(parsed) ? clamp(parsed, spec.min, spec.max) : spec.min;
+    if (settled !== this.numeric() || input.value === '') {
+      this.valueChange.emit(settled);
+    }
+    input.value = String(settled);
   }
 
-  protected onSelect(event: Event): void {
-    this.valueChange.emit((event.target as HTMLSelectElement).value);
+  protected onToggle(event: Event): void {
+    this.valueChange.emit((event.target as HTMLInputElement).checked);
   }
 
   protected step(delta: number): void {
@@ -81,6 +113,65 @@ export class NodeWidget {
     }
     const next = clamp(this.numeric() + delta * (spec.step || 1), spec.min, spec.max);
     this.valueChange.emit(round(next, spec.step || 1));
+  }
+
+  // --- Dropdown -----------------------------------------------------------
+
+  protected toggleList(): void {
+    if (!this.disabled()) {
+      this.listOpen.update((open) => !open);
+    }
+  }
+
+  protected closeList(): void {
+    this.listOpen.set(false);
+  }
+
+  protected pickOption(value: string): void {
+    this.closeList();
+    this.valueChange.emit(value);
+  }
+
+  /** Up and down move through the options without opening the list, as a native select does. */
+  protected onSelectKeydown(event: KeyboardEvent): void {
+    const spec = this.spec();
+    if (spec.kind !== 'dropdown') {
+      return;
+    }
+    if (event.key === 'Escape') {
+      this.closeList();
+      return;
+    }
+    const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+    if (step === 0) {
+      return;
+    }
+    event.preventDefault();
+    const options = spec.options;
+    const at = options.findIndex((option) => option.value === this.text());
+    const next = clamp((at < 0 ? 0 : at) + step, 0, options.length - 1);
+    this.valueChange.emit(options[next].value);
+  }
+
+  // --- Path pickers -------------------------------------------------------
+
+  /**
+   * Opens the browser-side dialog for a path.
+   *
+   * A path field is not a browser upload: the engine is what opens it, so what the user needs to
+   * see is the engine's disk. `FileBrowserService` is the seam.
+   */
+  protected async browse(mode: 'file' | 'directory'): Promise<void> {
+    const spec = this.spec();
+    const chosen = await this.browser.pick({
+      mode,
+      title: mode === 'directory' ? 'Choose a folder' : 'Choose a file',
+      startAt: this.text(),
+      extensions: spec.kind === 'file' ? spec.extensions : [],
+    });
+    if (chosen !== null) {
+      this.valueChange.emit(chosen);
+    }
   }
 }
 
