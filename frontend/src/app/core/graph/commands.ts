@@ -61,6 +61,18 @@ export function removeSelection(nodeIds: readonly string[], edgeIds: readonly st
   };
 }
 
+/** Renames one node instance. Empty puts the node type's own label back. */
+export function renameNode(nodeId: string, title: string): Command {
+  const trimmed = title.trim();
+  return {
+    label: trimmed ? `Rename to ${trimmed}` : 'Clear name',
+    apply: (doc) => ({
+      ...doc,
+      nodes: doc.nodes.map((node) => (node.id === nodeId ? { ...node, title: trimmed } : node)),
+    }),
+  };
+}
+
 export function removeEdges(edgeIds: readonly string[]): Command {
   const doomed = new Set(edgeIds);
   return {
@@ -107,6 +119,26 @@ export function setInputValue(nodeId: string, key: string, value: unknown): Comm
       ...doc,
       nodes: doc.nodes.map((node) =>
         node.id === nodeId ? { ...node, values: { ...node.values, [key]: value } } : node,
+      ),
+    }),
+  };
+}
+
+/**
+ * Several of one node's values at once.
+ *
+ * One command rather than a loop over {@link setInputValue}, because a discovery that filled in six
+ * settings should be one press of undo and not six. That reversibility is what makes it acceptable
+ * for the editor to write into a user's fields at all.
+ */
+export function setInputValues(nodeId: string, values: Readonly<Record<string, unknown>>): Command {
+  const count = Object.keys(values).length;
+  return {
+    label: count === 1 ? 'Edit value' : `Fill in ${count} settings`,
+    apply: (doc) => ({
+      ...doc,
+      nodes: doc.nodes.map((node) =>
+        node.id === nodeId ? { ...node, values: { ...node.values, ...values } } : node,
       ),
     }),
   };

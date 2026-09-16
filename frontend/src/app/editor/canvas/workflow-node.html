@@ -12,10 +12,51 @@
 
   <span class="head__identity">
     <app-icon class="head__icon" [name]="spec().icon" [size]="13" />
-    <span class="head__title">{{ spec().label }}</span>
+    @if (renaming()) {
+      <input
+        class="head__rename"
+        type="text"
+        autofocus
+        [value]="node().title"
+        [attr.placeholder]="spec().label"
+        (blur)="commitRename($event)"
+        (keydown)="onRenameKeydown($event)"
+        (click)="$event.stopPropagation()"
+        fDragBlocker
+      />
+    } @else {
+      <!-- Double-click renames. The type label stays in the tooltip, so a renamed node never hides
+           what it actually is. -->
+      <span
+        class="head__title"
+        [class.head__title--named]="node().title"
+        [attr.title]="node().title ? node().title + ' — ' + spec().label : spec().label"
+        (dblclick)="startRename($event)"
+        >{{ title() }}</span
+      >
+    }
   </span>
 
   <span class="head__state">
+    <!--
+      Node-level checks. The bulb is the whole answer at a glance — unlit, amber while asking, green
+      or red once it knows — and clicking the result opens what it actually said.
+    -->
+    @for (action of headerActions(); track action.key) {
+      <button
+        class="probe"
+        type="button"
+        [class]="'is-' + actionState(action)"
+        [attr.title]="actionTitle(action)"
+        [attr.aria-label]="action.label"
+        (click)="runAction(action, $event)"
+        (contextmenu)="toggleResult(action, $event)"
+        fDragBlocker
+      >
+        <app-icon [name]="action.icon" [size]="13" />
+      </button>
+    }
+
     @if (node().disabled) {
       <app-icon class="head__badge head__badge--off" name="power" [size]="12" title="Switched off" />
     } @else if (bypassed()) {
@@ -41,98 +82,194 @@
   </span>
 </header>
 
+<!--
+  One row, drawn the same way whether it sits above the fold or below it. A template rather than two
+  copies of sixty lines: the two sections differ in *which* inputs they hold and in nothing else, and
+  a divergence between them would be a bug nobody would see until one of them stopped working.
+-->
+<ng-template #rowTemplate let-row>
+  <!-- The type colour is set on the row, not only on the port, so anything else in the row
+       that wants it — the "wired" badge — can read the same variable. -->
+  <div class="row" [class]="row.portClass">
+    @switch (row.kind) {
+      @case ('socket') {
+        <!-- Socket only: the label reads left to right out of its port, into the node. -->
+        <div class="line">
+          <div
+            class="port port--in"
+            [class]="row.portClass"
+            fConnector
+            fConnectorType="target"
+            fConnectorConnectableSide="left"
+            [fConnectorId]="row.connectorId"
+            [fConnectorCategory]="row.typeKey"
+            [fConnectorSelfConnectable]="false"
+            [attr.title]="row.portTitle"
+            [attr.aria-label]="row.portTitle"
+          ></div>
+          <span class="line__label">{{ row.spec.label }}</span>
+          @if (!row.spec.required) {
+            <span class="line__optional">optional</span>
+          }
+          @if (row.spec.hint) {
+            <app-icon class="line__hint" name="help" [size]="12" [attr.title]="row.spec.hint" />
+          }
+        </div>
+      }
+      @case ('toggle') {
+        <!-- A toggle carries its own label, so it does not get a second one above it. -->
+        <div class="control">
+          @if (row.spec.connectable) {
+            <div
+              class="port port--in"
+              [class]="row.portClass"
+              fConnector
+              fConnectorType="target"
+              fConnectorConnectableSide="left"
+              [fConnectorId]="row.connectorId"
+              [fConnectorCategory]="row.typeKey"
+              [fConnectorSelfConnectable]="false"
+              [attr.title]="row.portTitle"
+              [attr.aria-label]="row.portTitle"
+            ></div>
+          }
+          <app-node-widget
+            [spec]="row.spec.widget!"
+            [value]="row.value"
+            [disabled]="row.widgetDisabled"
+            [label]="row.spec.label"
+            (valueChange)="setValue(row.spec.key, $event)"
+          >{{ row.spec.label }}</app-node-widget>
+          @if (row.spec.hint) {
+            <app-icon class="line__hint" name="help" [size]="12" [attr.title]="row.spec.hint" />
+          }
+        </div>
+      }
+      @default {
+        <!-- A field: its label is centred above the control, as in the reference UI. -->
+        <div class="row__label">
+          {{ row.spec.label }}
+          @if (row.spec.hint) {
+            <app-icon class="line__hint" name="help" [size]="11" [attr.title]="row.spec.hint" />
+          }
+          @if (row.wired) {
+            <span class="row__driven" title="Driven by the connected edge">wired</span>
+          }
+        </div>
+        <div class="control" [class.control--tall]="row.tall">
+          @if (row.spec.connectable) {
+            <div
+              class="port port--in"
+              [class]="row.portClass"
+              fConnector
+              fConnectorType="target"
+              fConnectorConnectableSide="left"
+              [fConnectorId]="row.connectorId"
+              [fConnectorCategory]="row.typeKey"
+              [fConnectorSelfConnectable]="false"
+              [attr.title]="row.portTitle"
+              [attr.aria-label]="row.portTitle"
+            ></div>
+          }
+          <app-node-widget
+            [spec]="row.spec.widget!"
+            [value]="row.value"
+            [disabled]="row.widgetDisabled"
+            [label]="row.spec.label"
+            [discovered]="row.discovered"
+            [discoveryNote]="row.discoveryNote"
+            [allowed]="row.allowed"
+            (valueChange)="setValue(row.spec.key, $event)"
+            (opened)="onWidgetOpened(row.automatic)"
+          />
+        </div>
+      }
+    }
+  </div>
+</ng-template>
+
 @if (!node().collapsed) {
+  <!--
+    The body grows with what is in it and never scrolls. A scrolling body clipped every port that
+    straddles the border and moved the output sockets out of sight the moment Advanced was opened;
+    what keeps a node short is the fold, the conditions, and profiles — not a scrollbar.
+  -->
   <div class="body">
     @if (rows().length > 0) {
       <section class="section section--in">
         @for (row of rows(); track row.spec.key) {
-          <!-- The type colour is set on the row, not only on the port, so anything else in the row
-               that wants it — the "wired" badge — can read the same variable. -->
-          <div class="row" [class]="row.portClass">
-            @switch (row.kind) {
-              @case ('socket') {
-                <!-- Socket only: the label reads left to right out of its port, into the node. -->
-                <div class="line">
-                  <div
-                    class="port port--in"
-                    [class]="row.portClass"
-                    fConnector
-                    fConnectorType="target"
-                    fConnectorConnectableSide="left"
-                    [fConnectorId]="row.connectorId"
-                    [fConnectorCategory]="row.typeKey"
-                    [fConnectorSelfConnectable]="false"
-                    [attr.title]="row.portTitle"
-                    [attr.aria-label]="row.portTitle"
-                  ></div>
-                  <span class="line__label">{{ row.spec.label }}</span>
-                  @if (!row.spec.required) {
-                    <span class="line__optional">optional</span>
-                  }
-                  @if (row.spec.hint) {
-                    <app-icon class="line__hint" name="help" [size]="12" [attr.title]="row.spec.hint" />
-                  }
-                </div>
-              }
-              @case ('toggle') {
-                <!-- A toggle carries its own label, so it does not get a second one above it. -->
-                <div class="control">
-                  @if (row.spec.connectable) {
-                    <div
-                      class="port port--in"
-                      [class]="row.portClass"
-                      fConnector
-                      fConnectorType="target"
-                      fConnectorConnectableSide="left"
-                      [fConnectorId]="row.connectorId"
-                      [fConnectorCategory]="row.typeKey"
-                      [fConnectorSelfConnectable]="false"
-                      [attr.title]="row.portTitle"
-                      [attr.aria-label]="row.portTitle"
-                    ></div>
-                  }
-                  <app-node-widget
-                    [spec]="row.spec.widget!"
-                    [value]="row.value"
-                    [disabled]="row.widgetDisabled"
-                    (valueChange)="setValue(row.spec.key, $event)"
-                  >{{ row.spec.label }}</app-node-widget>
-                </div>
-              }
-              @default {
-                <!-- A field: its label is centred above the control, as in the reference UI. -->
-                <div class="row__label">
-                  {{ row.spec.label }}
-                  @if (row.wired) {
-                    <span class="row__driven" title="Driven by the connected edge">wired</span>
-                  }
-                </div>
-                <div class="control" [class.control--tall]="row.tall">
-                  @if (row.spec.connectable) {
-                    <div
-                      class="port port--in"
-                      [class]="row.portClass"
-                      fConnector
-                      fConnectorType="target"
-                      fConnectorConnectableSide="left"
-                      [fConnectorId]="row.connectorId"
-                      [fConnectorCategory]="row.typeKey"
-                      [fConnectorSelfConnectable]="false"
-                      [attr.title]="row.portTitle"
-                      [attr.aria-label]="row.portTitle"
-                    ></div>
-                  }
-                  <app-node-widget
-                    [spec]="row.spec.widget!"
-                    [value]="row.value"
-                    [disabled]="row.widgetDisabled"
-                    (valueChange)="setValue(row.spec.key, $event)"
-                  />
-                </div>
-              }
+          <ng-container *ngTemplateOutlet="rowTemplate; context: { $implicit: row }" />
+        }
+      </section>
+    }
+
+    @if (advancedSummary().total > 0) {
+      <!--
+        Fine tuning, folded. The count of *changed* settings is on the header for a reason: a fold
+        that hides a setting somebody moved is a fold that hides why a run behaves oddly.
+      -->
+      <section class="section section--advanced">
+        <button
+          class="advanced__head"
+          type="button"
+          [attr.aria-expanded]="advancedOpen()"
+          (click)="toggleAdvanced()"
+          fDragBlocker
+        >
+          <app-icon
+            class="advanced__chevron"
+            [class.is-open]="advancedOpen()"
+            name="chevron"
+            [size]="11"
+          />
+          <span class="advanced__label">Advanced</span>
+          @if (advancedSummary().changed > 0) {
+            <span class="advanced__changed" title="Settings here are no longer at their default">
+              {{ advancedSummary().changed }} changed
+            </span>
+          } @else {
+            <span class="advanced__count">{{ advancedSummary().total }}</span>
+          }
+        </button>
+
+        @if (advancedOpen()) {
+          <div class="advanced__body">
+            @for (row of advancedRows(); track row.spec.key) {
+              <ng-container *ngTemplateOutlet="rowTemplate; context: { $implicit: row }" />
             }
           </div>
         }
+      </section>
+    }
+
+    @if (shownResult(); as shown) {
+      <!-- What a check actually said. Opened by clicking the indicator, because the one-line
+           message on the button is the answer and this is the evidence behind it. -->
+      <section class="section section--probe">
+        <div class="probe-result" [class.is-bad]="!shown.result.ok">
+          <div class="probe-result__head">
+            <app-icon [name]="shown.result.ok ? 'check' : 'warning'" [size]="12" [weight]="2.5" />
+            <span class="probe-result__message">{{ shown.result.message }}</span>
+            <button
+              class="probe-result__close"
+              type="button"
+              aria-label="Close"
+              (click)="closeResult()"
+              fDragBlocker
+            >
+              <app-icon name="close" [size]="10" [weight]="2.5" />
+            </button>
+          </div>
+          @for (line of shown.result.details; track $index) {
+            <div class="probe-result__line">{{ line }}</div>
+          }
+          @if (shown.result.applied.length > 0) {
+            <div class="probe-result__applied">
+              Filled in {{ shown.result.applied.length }}
+              {{ shown.result.applied.length === 1 ? 'setting' : 'settings' }} · Ctrl+Z undoes it
+            </div>
+          }
+        </div>
       </section>
     }
 
@@ -158,6 +295,14 @@
             </div>
           </div>
         }
+      </section>
+    }
+
+    @if (streamed()) {
+      <!-- The answer as it lands. Separate from the log because it is one growing value rather than
+           a list of lines, and because it is the thing a person actually watches. -->
+      <section class="section section--stream">
+        <div class="stream" [class.is-live]="status()?.state === 'RUNNING'">{{ streamed() }}</div>
       </section>
     }
 

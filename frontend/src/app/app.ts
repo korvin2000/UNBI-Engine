@@ -1,5 +1,7 @@
 import { ChangeDetectionStrategy, Component, HostListener, OnInit, inject } from '@angular/core';
 import { CatalogService } from './core/catalog/catalog.service';
+import { OptionCatalogService } from './core/catalog/option-catalog.service';
+import { PresetService } from './core/presets/preset.service';
 import * as commands from './core/graph/commands';
 import { GraphStore } from './core/graph/graph-store';
 import { EngineSocket } from './core/runtime/engine-socket';
@@ -9,6 +11,12 @@ import { NodePalette } from './editor/palette/node-palette';
 import { EditorToolbar } from './editor/toolbar/editor-toolbar';
 import { FileBrowser } from './shared/file-browser/file-browser';
 import { FileBrowserService } from './shared/file-browser/file-browser.service';
+import { PresetDialog } from './shared/preset-dialog/preset-dialog';
+import { ProfileDialog } from './shared/profile-dialog/profile-dialog';
+import { ProfileService } from './core/profiles/profile.service';
+import { CredentialService } from './core/credentials/credential.service';
+import { TextEditor } from './shared/text-editor/text-editor';
+import { TextEditorService } from './shared/text-editor/text-editor.service';
 
 /**
  * The application shell: toolbar across the top, palette on the left, canvas filling the rest.
@@ -19,7 +27,7 @@ import { FileBrowserService } from './shared/file-browser/file-browser.service';
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EditorToolbar, NodePalette, FlowCanvas, FileBrowser],
+  imports: [EditorToolbar, NodePalette, FlowCanvas, FileBrowser, PresetDialog, ProfileDialog, TextEditor],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -29,9 +37,19 @@ export class App implements OnInit {
   private readonly graph = inject(GraphStore);
   private readonly runs = inject(RunStore);
   private readonly browser = inject(FileBrowserService);
+  private readonly options = inject(OptionCatalogService);
+  private readonly presets = inject(PresetService);
+  private readonly textEditor = inject(TextEditorService);
+  private readonly profiles = inject(ProfileService);
+  private readonly credentials = inject(CredentialService);
 
   ngOnInit(): void {
     this.catalog.load();
+    // Neither is worth a loading state: a dropdown with no server-side options still renders its
+    // static ones, and an empty Presets tab is a true statement about a fresh engine.
+    this.options.load();
+    this.presets.load();
+    this.credentials.load();
     this.socket.connect();
   }
 
@@ -39,7 +57,13 @@ export class App implements OnInit {
   protected onKeydown(event: KeyboardEvent): void {
     // Never steal a keystroke from a field the user is typing in, or from the modal picker — the
     // dialog has its own Escape and Enter, and Delete there must not reach the canvas behind it.
-    if (isTextEntry(event.target) || this.browser.open() !== null) {
+    if (
+      isTextEntry(event.target) ||
+      this.browser.open() !== null ||
+      this.presets.pending() !== null ||
+      this.profiles.editing() !== null ||
+      this.textEditor.open() !== null
+    ) {
       return;
     }
 

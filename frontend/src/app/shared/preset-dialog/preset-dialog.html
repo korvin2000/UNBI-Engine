@@ -1,0 +1,82 @@
+@if (draft(); as pending) {
+  <div class="scrim" (click)="cancel()"></div>
+
+  <div
+    class="dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Save as preset"
+    (keydown)="onKeydown($event)"
+  >
+    <header class="dialog__head">
+      <app-icon name="bookmark" [size]="15" />
+      <h2 class="dialog__title">Save as preset</h2>
+      <button class="dialog__close" type="button" aria-label="Close" (click)="cancel()">
+        <app-icon name="close" [size]="14" />
+      </button>
+    </header>
+
+    <div class="dialog__body">
+      <p class="dialog__note">
+        Saved on the engine, separately from any workflow — settings only, never a credential.
+      </p>
+
+      <label class="field-row">
+        <span class="field-row__label">Name</span>
+        <input
+          class="field"
+          type="text"
+          autofocus
+          placeholder="German summary"
+          [value]="name()"
+          (input)="setName($event)"
+        />
+      </label>
+
+      <label class="field-row">
+        <span class="field-row__label">Group</span>
+        <input
+          class="field"
+          type="text"
+          list="preset-groups"
+          placeholder="Translation"
+          [value]="group()"
+          (input)="setGroup($event)"
+        />
+        <!-- Existing groups offered rather than imposed: a fixed list would be wrong by the second
+             project, and a free field with no suggestions produces four spellings of one group. -->
+        <datalist id="preset-groups">
+          @for (known of knownGroups(); track known) {
+            <option [value]="known"></option>
+          }
+        </datalist>
+      </label>
+
+      <label class="field-row">
+        <span class="field-row__label">Description</span>
+        <textarea
+          class="field field--area"
+          rows="2"
+          placeholder="What this is for"
+          [value]="description()"
+          (input)="setDescription($event)"
+        ></textarea>
+      </label>
+
+      <p class="dialog__type">
+        {{ pending.nodeType }}
+      </p>
+
+      @if (error()) {
+        <p class="dialog__error">{{ error() }}</p>
+      }
+    </div>
+
+    <footer class="dialog__foot">
+      <button class="button" type="button" (click)="cancel()">Cancel</button>
+      <button class="button button--primary" type="button" [disabled]="!canSave()" (click)="save()">
+        Save preset
+      </button>
+    </footer>
+  </div>
+}

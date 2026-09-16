@@ -15,6 +15,14 @@ export interface WorkflowNode {
   readonly id: string;
   /** Which `NodeSpec.id` this is an instance of. */
   readonly type: string;
+  /**
+   * A name the user gave this instance, or empty for the node type's own label.
+   *
+   * Editor-only: the engine identifies a node by id and has no use for a name. It matters on a
+   * canvas holding four LLM Request nodes, where the type label alone says nothing about which is
+   * which — and it is what makes a saved graph readable a month later.
+   */
+  readonly title: string;
   readonly position: Point;
   /** Widget values keyed by input key. An incoming edge overrides the value here. */
   readonly values: Readonly<Record<string, unknown>>;
@@ -40,6 +48,30 @@ export interface Point {
 }
 
 export const EMPTY_DOC: WorkflowDoc = { nodes: [], edges: [] };
+
+/**
+ * A fresh node instance.
+ *
+ * One factory rather than an object literal at each site: the palette, the canvas drop handler, the
+ * preset instantiator and the built-in example all create nodes, and a field added to
+ * {@link WorkflowNode} should be a one-line change rather than a hunt.
+ */
+export function newNode(
+  type: string,
+  position: Point,
+  values: Readonly<Record<string, unknown>> = {},
+  title = '',
+): WorkflowNode {
+  return {
+    id: crypto.randomUUID(),
+    type,
+    title,
+    position,
+    values,
+    collapsed: false,
+    disabled: false,
+  };
+}
 
 /**
  * Connector ids used by the flow canvas.

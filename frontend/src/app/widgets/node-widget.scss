@@ -267,29 +267,76 @@
   }
 }
 
-// Covers the whole canvas so a click anywhere closes the list, including on another node.
-.select__backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-}
-
-.select__list {
+// The popup: a filter at the top when the list is long, then the options. The frame is the panel
+// so that the filter stays put while the options under it scroll.
+.select__panel {
   position: absolute;
   z-index: 21;
   top: calc(100% + 3px);
   left: 0;
   right: 0;
-  margin: 0;
-  padding: 3px;
-  max-height: 190px;
-  overflow-y: auto;
-  list-style: none;
+  display: flex;
+  flex-direction: column;
   background: var(--panel-raised);
   border: 1px solid var(--node-border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-panel);
   animation: select-in 110ms var(--ease);
+  overflow: hidden;
+}
+
+.select__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 5px 7px;
+  border-bottom: 1px solid var(--node-border);
+  color: var(--text-faint);
+
+  input {
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+
+    &::-webkit-search-cancel-button {
+      appearance: none;
+    }
+  }
+}
+
+.select__empty {
+  padding: 8px 7px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+// A capped list has to say so. Silently drawing the first hundred and fifty of a thousand would
+// make a model that is genuinely offered look as though it were not.
+.select__more {
+  flex: none;
+  margin: 0;
+  padding: 5px 8px;
+  border-top: 1px solid var(--node-border);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  text-align: center;
+}
+
+.select__list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 3px;
+  max-height: 190px;
+  overflow-y: auto;
+  list-style: none;
 
   button {
     display: flex;
@@ -384,4 +431,540 @@
 
 .picker.is-disabled .picker__icon {
   opacity: 0.5;
+}
+
+// --- Monospace fields ------------------------------------------------------
+// For a prompt template or a JSON schema, where alignment carries meaning and proportional text
+// makes a nested structure unreadable.
+.field--mono {
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', 'JetBrains Mono', Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+// --- Combo box -------------------------------------------------------------
+// One box that is typed into and picked from. The list can never be complete — a model name the
+// engine has never heard of is a normal thing to want — so typing is a first-class way in, and
+// what is typed also filters the list. The chevron is a separate button so the text stays a text
+// box with a caret, not a button pretending to be one.
+.combo {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.combo__input {
+  padding-right: 26px;
+  text-overflow: ellipsis;
+}
+
+.combo__toggle {
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  bottom: 2px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  border-radius: 3px;
+  color: var(--text-faint);
+  transition: color var(--tempo) var(--ease), background var(--tempo) var(--ease);
+
+  &:hover:not(:disabled) {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.09);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+  }
+}
+
+// --- A profile: a list, and the way into the dialog behind it --------------
+.profile {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+
+  .select__button {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.profile__manage {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  background: var(--node-field);
+  border: 1px solid var(--node-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  transition:
+    color var(--tempo) var(--ease),
+    border-color var(--tempo) var(--ease),
+    background var(--tempo) var(--ease);
+
+  &:hover:not(:disabled) {
+    color: var(--text);
+    border-color: var(--accent-node);
+    background: var(--accent-node-dim);
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.select__lead {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.select__value.is-placeholder {
+  color: var(--text-faint);
+}
+
+// A row of the list can carry a note beside the name (where a key came from) and a way to forget
+// it. The remove button is a sibling of the option so the option stays one clean click target.
+.select__list li {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+
+  > button:first-child {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.select__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.select__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// A profile's description: a second, quieter line, so two profiles with similar names are told
+// apart without the name being pushed aside.
+.select__detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.select__note {
+  flex: none;
+  padding: 0 5px;
+  background: var(--node-sunken);
+  border-radius: 3px;
+  color: var(--text-faint);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+// Scoped under the list so it outranks the list's generic `button` rule, which would otherwise
+// hand this button the row's full width and squeeze the option beside it to nothing.
+.select__list .select__remove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  padding: 0;
+  border-radius: 3px;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity var(--tempo) var(--ease), color var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--danger);
+    background: var(--node-sunken);
+  }
+}
+
+.select__list li:hover .select__remove,
+.select__list .select__remove:focus-visible {
+  opacity: 1;
+}
+
+.select__add {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  width: 100%;
+  padding: 6px 9px;
+  border-top: 1px solid var(--node-border);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  text-align: left;
+
+  &:hover {
+    color: var(--text);
+    background: var(--accent-soft);
+  }
+}
+
+// Adding a key: the one form in the editor that takes a secret. It is a password box, it is sent
+// once, and nothing here keeps it afterwards.
+.keyform {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: none;
+  padding: 7px 8px 8px;
+  border-top: 1px solid var(--node-border);
+  background: var(--node-sunken);
+}
+
+.keyform__name,
+.keyform__secret {
+  padding: 4px 7px;
+  font-size: 11.5px;
+}
+
+.keyform__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.keyform__save {
+  padding: 4px 10px;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.keyform__cancel {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 11px;
+
+  &:hover {
+    color: var(--text);
+    background: var(--node-body);
+  }
+}
+
+.keyform__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 10.5px;
+}
+
+.keyform__note {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+// --- Multi-select chips ----------------------------------------------------
+// A closed set, shown as toggles rather than a list of checkboxes: these sit inside a 252px node,
+// and eight stacked rows would make the node twice as tall as everything around it.
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  background: var(--node-field);
+  border: 1px solid var(--node-border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    border-color var(--tempo) var(--ease),
+    background var(--tempo) var(--ease),
+    color var(--tempo) var(--ease);
+
+  &:hover:not(:disabled) {
+    border-color: var(--node-border-hover);
+    color: var(--text);
+  }
+
+  // On is the node's own accent, so a glance at a node says which capabilities it claims.
+  &.is-on {
+    background: var(--accent-node-dim);
+    border-color: var(--accent-node);
+    color: var(--text);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// --- Key/value rows --------------------------------------------------------
+.pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pairs__row {
+  display: grid;
+  // The value is the half that is usually long, so it takes the extra space.
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.pairs__key,
+.pairs__value {
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+.pairs__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color var(--tempo) var(--ease), background var(--tempo) var(--ease);
+
+  &:hover:not(:disabled) {
+    background: var(--node-sunken);
+    color: var(--danger);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.pairs__add {
+  align-self: flex-start;
+  padding: 3px 8px;
+  background: none;
+  border: 1px dashed var(--node-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color var(--tempo) var(--ease), color var(--tempo) var(--ease);
+
+  &:hover:not(:disabled) {
+    border-color: var(--accent-node);
+    color: var(--text);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// --- A multiline field with a way out --------------------------------------
+// The expand button sits over the corner of the box rather than beside it: the node's width is the
+// scarce thing, and a control that took a column from every prompt field would cost more than it
+// gives.
+.area {
+  position: relative;
+  display: block;
+}
+
+.area__expand {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  background: color-mix(in srgb, var(--node-body) 85%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  opacity: 0;
+  transition:
+    opacity var(--tempo) var(--ease),
+    color var(--tempo) var(--ease),
+    border-color var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  &:disabled {
+    display: none;
+  }
+}
+
+// Revealed on approach, and always once the field has focus — otherwise a keyboard user could
+// never reach it.
+.area:hover .area__expand,
+.area:focus-within .area__expand {
+  opacity: 1;
+}
+
+// Room for the button, so the first line of text never runs underneath it.
+.field--expandable {
+  padding-right: 28px;
+}
+
+.unit--blank {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+// --- A list of files -------------------------------------------------------
+.files {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  &.is-disabled {
+    opacity: 0.55;
+    pointer-events: none;
+  }
+}
+
+.files__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 6px;
+  background: var(--node-sunken);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+
+.files__icon {
+  flex: none;
+  color: var(--text-faint);
+}
+
+// The last path segment, because that is the part anyone reads. The whole path is in the tooltip,
+// where it can be long without pushing the node wider.
+.files__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.files__remove {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 17px;
+  height: 17px;
+  border-radius: 3px;
+  color: var(--text-faint);
+  transition: color var(--tempo) var(--ease), background var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--danger);
+    background: var(--node-body);
+  }
+}
+
+.files__empty {
+  margin: 0;
+  padding: 5px 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-style: italic;
+  text-align: center;
+}
+
+.files__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.files__add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  background: var(--node-sunken);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 11px;
+  transition: border-color var(--tempo) var(--ease), color var(--tempo) var(--ease);
+
+  &:hover {
+    border-color: var(--accent);
+    border-style: solid;
+    color: var(--text);
+  }
+}
+
+.files__clear {
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: 10.5px;
+
+  &:hover {
+    color: var(--danger);
+  }
+}
+
+.files__count {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }

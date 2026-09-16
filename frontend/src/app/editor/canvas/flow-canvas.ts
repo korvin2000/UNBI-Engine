@@ -21,7 +21,8 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 import { NodeSpec } from '../../core/catalog/catalog.models';
 import * as commands from '../../core/graph/commands';
 import { GraphStore } from '../../core/graph/graph-store';
-import { Point, connectorId } from '../../core/graph/workflow.models';
+import { PresetService } from '../../core/presets/preset.service';
+import { Point, connectorId, newNode } from '../../core/graph/workflow.models';
 import { RunStore } from '../../core/runtime/run-store';
 import { assignable } from '../../core/types/assignability';
 import { portColourKey } from '../../core/types/port-type';
@@ -30,6 +31,8 @@ import { WorkflowNode } from './workflow-node';
 
 /** What a context menu can do. A union so the template cannot ask for anything else. */
 type MenuAction =
+  | 'rename'
+  | 'save-preset'
   | 'collapse'
   | 'disable'
   | 'duplicate'
@@ -38,6 +41,9 @@ type MenuAction =
   | 'fit'
   | 'select-all'
   | 'clear';
+
+/** Marks palette drag data as a saved configuration rather than a bare node type. */
+export const PRESET_PREFIX = 'preset:';
 
 interface OpenMenu {
   /** `null` when the menu was opened on empty canvas rather than on a node. */
@@ -71,6 +77,7 @@ export class FlowCanvas {
   private readonly graph = inject(GraphStore);
   private readonly catalog = inject(CatalogService);
   private readonly runs = inject(RunStore);
+  private readonly presets = inject(PresetService);
   private readonly host = inject(ElementRef<HTMLElement>);
 
   private readonly canvas = viewChild.required(FCanvasComponent);
@@ -87,6 +94,15 @@ export class FlowCanvas {
   protected readonly doc = this.graph.doc;
   protected readonly zoomLabel = signal('100%');
   protected readonly menu = signal<OpenMenu | null>(null);
+
+  /**
+   * The node whose title is being edited, if any.
+   *
+   * Held here rather than in the node component because the node is recreated whenever the document
+   * changes, and an edit that survived exactly as long as the component did would end the moment the
+   * first keystroke was committed.
+   */
+  protected readonly renameRequested = signal<string | null>(null);
 
   /** Node plus its descriptor, resolved once per render rather than per binding. */
   protected readonly placed = computed(() => {
@@ -170,25 +186,35 @@ export class FlowCanvas {
     }
   }
 
-  /** A node dragged out of the palette. `data` is the descriptor id the palette attached. */
+  /**
+   * Something dragged out of the palette.
+   *
+   * `data` is a node id, or `preset:<id>` for a saved configuration. One channel rather than two
+   * drop handlers, because to the canvas both are the same gesture producing the same command — the
+   * only difference is which values the new node starts with.
+   */
   protected onCreateNode(event: FCreateNodeEvent<string>): void {
+    const at = event.dropPosition ?? { x: event.externalItemRect.x, y: event.externalItemRect.y };
+    if (event.data.startsWith(PRESET_PREFIX)) {
+      this.addPreset(event.data.slice(PRESET_PREFIX.length), { x: at.x, y: at.y });
+      return;
+    }
     const spec = this.catalog.byId().get(event.data);
     if (!spec) {
       return;
     }
-    const at = event.dropPosition ?? { x: event.externalItemRect.x, y: event.externalItemRect.y };
+    this.graph.dispatch(commands.addNode(newNode(spec.id, { x: at.x, y: at.y }), spec.label));
+  }
+
+  private addPreset(presetId: string, at: Point): void {
+    const preset = this.presets.all().find((candidate) => candidate.id === presetId);
+    if (!preset || !this.catalog.byId().has(preset.nodeType)) {
+      return;
+    }
+    // The preset's name becomes the node's, which is the whole point of naming one: a canvas with
+    // four LLM Request nodes on it should say which is which.
     this.graph.dispatch(
-      commands.addNode(
-        {
-          id: crypto.randomUUID(),
-          type: spec.id,
-          position: { x: at.x, y: at.y },
-          values: {},
-          collapsed: false,
-          disabled: false,
-        },
-        spec.label,
-      ),
+      commands.addNode(newNode(preset.nodeType, at, { ...preset.values }, preset.name), preset.name),
     );
   }
 
@@ -236,7 +262,7 @@ export class FlowCanvas {
     disabled: boolean,
   ): void {
     const rect = this.host.nativeElement.getBoundingClientRect();
-    const height = nodeId ? 190 : 128;
+    const height = nodeId ? 250 : 128;
     this.menu.set({
       nodeId,
       // Clamped inside the canvas so a menu opened near the right or bottom edge stays reachable.
@@ -249,6 +275,32 @@ export class FlowCanvas {
 
   protected closeMenu(): void {
     this.menu.set(null);
+  }
+
+  protected finishRename(): void {
+    this.renameRequested.set(null);
+  }
+
+  /**
+   * Saves this node's current settings under a name.
+   *
+   * Widget values only. Position, connections and run state are properties of this graph, not of
+   * the configuration, and a preset that carried them would drop a node onto the next canvas in
+   * the wrong place, half-connected.
+   */
+  private saveAsPreset(nodeId: string): void {
+    const node = this.graph.node(nodeId);
+    const spec = node ? this.catalog.byId().get(node.type) : undefined;
+    if (!node || !spec) {
+      return;
+    }
+    void this.presets.askToSave({
+      name: node.title || spec.label,
+      group: spec.category,
+      description: spec.description,
+      nodeType: node.type,
+      values: { ...node.values },
+    });
   }
 
   protected runMenu(action: MenuAction): void {
@@ -279,6 +331,12 @@ export class FlowCanvas {
     const targets = this.graph.selection().has(nodeId) ? [...this.graph.selection()] : [nodeId];
 
     switch (action) {
+      case 'rename':
+        this.renameRequested.set(nodeId);
+        break;
+      case 'save-preset':
+        this.saveAsPreset(nodeId);
+        break;
       case 'collapse':
         targets.forEach((id) => this.graph.dispatch(commands.toggleCollapsed(id)));
         break;

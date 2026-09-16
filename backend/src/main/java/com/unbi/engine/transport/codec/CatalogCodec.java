@@ -1,9 +1,11 @@
 package com.unbi.engine.transport.codec;
 
+import com.unbi.engine.core.node.NodeAction;
 import com.unbi.engine.core.node.NodeDescriptor;
 import com.unbi.engine.core.node.NodeInput;
 import com.unbi.engine.core.node.NodeOutput;
 import com.unbi.engine.core.node.Widget;
+import com.unbi.engine.json.JsonValues;
 import java.util.Collection;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.JsonNodeFactory;
@@ -46,6 +48,8 @@ public final class CatalogCodec {
         descriptor.inputs().forEach(input -> inputs.add(input(input)));
         var outputs = node.putArray("outputs");
         descriptor.outputs().forEach(output -> outputs.add(output(output)));
+        var actions = node.putArray("actions");
+        descriptor.actions().forEach(action -> actions.add(action(action)));
         return node;
     }
 
@@ -59,6 +63,24 @@ public final class CatalogCodec {
         node.set("widget", input.hasWidget() ? widget(input.widget()) : NODES.nullNode());
         node.set("default", JsonValues.of(input.defaultValue()));
         node.put("hint", input.hint());
+        node.put("advanced", input.advanced());
+        if (input.showWhen() != null) {
+            var condition = node.putObject("showWhen");
+            condition.put("key", input.showWhen().key());
+            var values = condition.putArray("values");
+            input.showWhen().values().forEach(values::add);
+        }
+        return node;
+    }
+
+    private static ObjectNode action(NodeAction action) {
+        var node = NODES.objectNode();
+        node.put("key", action.key());
+        node.put("label", action.label());
+        node.put("icon", action.icon());
+        node.put("appliesTo", action.appliesTo());
+        node.put("kind", action.kind().name().toLowerCase(java.util.Locale.ROOT));
+        node.put("automatic", action.automatic());
         return node;
     }
 
@@ -78,6 +100,11 @@ public final class CatalogCodec {
                 node.put("kind", "text");
                 node.put("placeholder", field.placeholder());
                 node.put("multiline", field.multiline());
+                node.put("rows", field.rows());
+                node.put("monospace", field.monospace());
+                node.put("editor", field.editor());
+                node.put("library", field.library());
+                node.put("libraryKey", field.libraryKey());
             }
             case Widget.NumberField field -> {
                 node.put("kind", "number");
@@ -85,6 +112,8 @@ public final class CatalogCodec {
                 node.put("max", field.max());
                 node.put("step", field.step());
                 node.put("unit", field.unit());
+                node.put("optional", field.optional());
+                node.put("blankLabel", field.blankLabel());
             }
             case Widget.Slider slider -> {
                 node.put("kind", "slider");
@@ -95,13 +124,25 @@ public final class CatalogCodec {
             case Widget.Toggle ignored -> node.put("kind", "toggle");
             case Widget.Dropdown dropdown -> {
                 node.put("kind", "dropdown");
-                ArrayNode options = node.putArray("options");
-                dropdown.options().forEach(option -> {
-                    var entry = NODES.objectNode();
-                    entry.put("value", option.value());
-                    entry.put("label", option.label());
-                    options.add(entry);
-                });
+                node.set("options", options(dropdown.options()));
+                node.put("optionsKey", dropdown.optionsKey());
+                node.put("allowCustom", dropdown.allowCustom());
+                if (dropdown.narrowing() != null) {
+                    var narrowing = node.putObject("narrowing");
+                    narrowing.put("socket", dropdown.narrowing().socket());
+                    narrowing.put("listKey", dropdown.narrowing().listKey());
+                    var always = narrowing.putArray("always");
+                    dropdown.narrowing().always().forEach(always::add);
+                }
+            }
+            case Widget.MultiSelect select -> {
+                node.put("kind", "multiselect");
+                node.set("options", options(select.options()));
+            }
+            case Widget.KeyValue pairs -> {
+                node.put("kind", "keyvalue");
+                node.put("keyPlaceholder", pairs.keyPlaceholder());
+                node.put("valuePlaceholder", pairs.valuePlaceholder());
             }
             case Widget.DirectoryPicker ignored -> node.put("kind", "directory");
             case Widget.FilePicker picker -> {
@@ -109,7 +150,38 @@ public final class CatalogCodec {
                 var extensions = node.putArray("extensions");
                 picker.extensions().forEach(extensions::add);
             }
+            case Widget.FileList list -> {
+                node.put("kind", "filelist");
+                var extensions = node.putArray("extensions");
+                list.extensions().forEach(extensions::add);
+            }
+            case Widget.Profile profile -> {
+                node.put("kind", "profile");
+                node.put("schema", profile.schema());
+            }
+            case Widget.Credential ignored -> node.put("kind", "credential");
         }
         return node;
+    }
+
+    /** The widget encoding, for anything outside the catalog that renders with the same controls. */
+    public static ObjectNode widgetNode(Widget widget) {
+        return widget(widget);
+    }
+
+    /** One input, for a profile schema served to the editor as a form. */
+    public static ObjectNode inputNode(NodeInput input) {
+        return input(input);
+    }
+
+    private static ArrayNode options(java.util.List<Widget.Option> options) {
+        var array = NODES.arrayNode();
+        options.forEach(option -> {
+            var entry = NODES.objectNode();
+            entry.put("value", option.value());
+            entry.put("label", option.label());
+            array.add(entry);
+        });
+        return array;
     }
 }

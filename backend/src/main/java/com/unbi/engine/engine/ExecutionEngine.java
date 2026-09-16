@@ -277,6 +277,15 @@ public class ExecutionEngine {
         }
 
         @Override
+        public void stream(String key, String chunk) {
+            if (chunk == null || chunk.isEmpty()) {
+                return;
+            }
+            descriptor.output(key); // throws if the node streams towards a port it never declared
+            emit.send(new EngineEvent.NodeStream(runId, nodeId, key, chunk, Instant.now()));
+        }
+
+        @Override
         public boolean isCancelled() {
             return cancelled.get();
         }

@@ -28,10 +28,14 @@ import tools.jackson.databind.node.ObjectNode;
  * that lists the engine's filesystem. That is what this endpoint is for: it is the server side of
  * the folder and file dialogs, and nothing else reads or writes through it.
  *
- * <p>Read-only by construction: it lists names, sizes and timestamps and never opens a file. A
- * directory it cannot read is reported as an error on the response rather than as a failed request,
- * because a picker that shows a permission problem in place is far more usable than one that
- * appears to be broken.
+ * <p>Read-only by construction. It lists names, sizes and timestamps, and it opens a file in exactly
+ * one place — {@link #text} — so that the prompt editor can start from a draft somebody already
+ * wrote. That one reader is bounded and refuses anything that is not text, because "read any file on
+ * the engine's host and hand it to the browser" is a far larger promise than a picker needs to make.
+ *
+ * <p>A directory it cannot read is reported as an error on the response rather than as a failed
+ * request, because a picker that shows a permission problem in place is far more usable than one
+ * that appears to be broken.
  */
 @RestController
 @RequestMapping("/api")
@@ -44,6 +48,15 @@ public class FileSystemController {
      * before the user found anything in it, and a picker is for choosing, not for auditing.
      */
     private static final int MAX_ENTRIES = 2_000;
+
+    /**
+     * The largest file the text reader will return.
+     *
+     * <p>A prompt is a page or two. This is generous by three orders of magnitude and still small
+     * enough that pointing the reader at a database dump fails with a sentence rather than by
+     * filling a browser tab with a gigabyte of binary.
+     */
+    private static final long MAX_TEXT_BYTES = 2 * 1024 * 1024;
 
     @GetMapping("/fs")
     public ObjectNode list(
@@ -75,6 +88,50 @@ public class FileSystemController {
             }
         }
         response.put("error", failure);
+        return response;
+    }
+
+    /**
+     * One text file, for a field that is being filled in from a draft.
+     *
+     * <p>Deliberately narrow: a size limit, a refusal for anything with NUL bytes in it, and a
+     * response that says which file it read. Nothing here writes, and nothing takes a path from
+     * anywhere but the picker the user just clicked through.
+     */
+    @GetMapping("/fs/text")
+    public ObjectNode text(@RequestParam("path") String requested) {
+        var response = NODES.objectNode();
+        response.put("path", requested == null ? "" : requested);
+        try {
+            var file = Path.of(requested.trim()).toAbsolutePath().normalize();
+            if (!Files.isRegularFile(file)) {
+                return failed(response, "Not a file: " + file);
+            }
+            var size = Files.size(file);
+            if (size > MAX_TEXT_BYTES) {
+                return failed(response, "%s is %,d bytes; the editor reads at most %,d."
+                        .formatted(file.getFileName(), size, MAX_TEXT_BYTES));
+            }
+            var bytes = Files.readAllBytes(file);
+            for (var value : bytes) {
+                if (value == 0) {
+                    // A NUL byte is the cheapest reliable sign of a binary file, and pasting one
+                    // into a prompt box produces a mess with no error attached to it.
+                    return failed(response, file.getFileName() + " does not look like a text file.");
+                }
+            }
+            response.put("path", file.toString());
+            response.put("text", new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+            response.put("error", (String) null);
+            return response;
+        } catch (IOException | RuntimeException unreadable) {
+            return failed(response, "Cannot read " + requested);
+        }
+    }
+
+    private static ObjectNode failed(ObjectNode response, String message) {
+        response.put("text", "");
+        response.put("error", message);
         return response;
     }
 

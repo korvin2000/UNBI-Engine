@@ -1,0 +1,188 @@
+@if (request(); as editing) {
+  <div class="scrim" (click)="dismiss()"></div>
+
+  <div
+    class="dialog"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-label]="(schema()?.label ?? 'Profile') + ' profiles'"
+  >
+    <header class="dialog__head">
+      <app-icon name="edit" [size]="15" />
+      <h2 class="dialog__title">{{ schema()?.label ?? 'Profiles' }}</h2>
+      <span class="dialog__sub">Saved on the engine · referenced by name from any workflow</span>
+      <button class="dialog__close" type="button" aria-label="Close" (click)="dismiss()">
+        <app-icon name="close" [size]="14" />
+      </button>
+    </header>
+
+    <div class="dialog__body">
+      <!-- The profiles that exist, and the way to start another. -->
+      <aside class="side">
+        <button class="side__new" type="button" [class.is-active]="!selectedId()" (click)="startNew()">
+          <app-icon name="plus" [size]="12" />
+          New profile
+        </button>
+        <ul class="side__list" role="listbox">
+          @for (profile of list(); track profile.id) {
+            <li>
+              <button
+                type="button"
+                role="option"
+                [attr.aria-selected]="profile.id === selectedId()"
+                [class.is-active]="profile.id === selectedId()"
+                (click)="select(profile)"
+              >
+                <span class="side__name">{{ profile.name }}</span>
+                @if (profile.description) {
+                  <span class="side__desc">{{ profile.description }}</span>
+                }
+              </button>
+            </li>
+          } @empty {
+            <li class="side__empty">Nothing saved yet.</li>
+          }
+        </ul>
+      </aside>
+
+      <!-- The profile itself: a name, a line about it, and the fields the engine declared. -->
+      <section class="form">
+        @if (state()?.error) {
+          <p class="form__error">{{ state()?.error }}</p>
+        }
+
+        <div class="form__identity">
+          <label class="field-row field-row--name">
+            <span class="field-row__label">Name</span>
+            <input
+              class="field"
+              type="text"
+              autofocus
+              placeholder="OpenRouter · work account"
+              [value]="name()"
+              (input)="setName($event)"
+            />
+          </label>
+          <label class="field-row">
+            <span class="field-row__label">Description</span>
+            <input
+              class="field"
+              type="text"
+              placeholder="What this one is for"
+              [value]="description()"
+              (input)="setDescription($event)"
+            />
+          </label>
+        </div>
+
+        <div class="form__fields">
+          @for (field of plainFields(); track field.key) {
+            @if (applies(field)) {
+              <div class="field-row" [class.field-row--toggle]="field.widget?.kind === 'toggle'">
+                @if (field.widget?.kind !== 'toggle') {
+                  <span class="field-row__label">
+                    {{ field.label }}
+                    @if (field.hint) {
+                      <app-icon class="field-row__hint" name="help" [size]="12" [attr.title]="field.hint" />
+                    }
+                  </span>
+                }
+                <app-node-widget
+                  [spec]="field.widget!"
+                  [value]="valueOf(field)"
+                  [label]="field.label"
+                  (valueChange)="setValue(field.key, $event)"
+                >{{ field.label }}</app-node-widget>
+                @if (field.widget?.kind === 'toggle' && field.hint) {
+                  <app-icon class="field-row__hint" name="help" [size]="12" [attr.title]="field.hint" />
+                }
+              </div>
+            }
+          }
+        </div>
+
+        @if (advancedFields().length > 0) {
+          <div class="form__divider"><span>Advanced</span></div>
+          <div class="form__fields">
+            @for (field of advancedFields(); track field.key) {
+              @if (applies(field)) {
+                <div class="field-row" [class.field-row--toggle]="field.widget?.kind === 'toggle'">
+                  @if (field.widget?.kind !== 'toggle') {
+                    <span class="field-row__label">
+                      {{ field.label }}
+                      @if (field.hint) {
+                        <app-icon class="field-row__hint" name="help" [size]="12" [attr.title]="field.hint" />
+                      }
+                    </span>
+                  }
+                  <app-node-widget
+                    [spec]="field.widget!"
+                    [value]="valueOf(field)"
+                    [label]="field.label"
+                    (valueChange)="setValue(field.key, $event)"
+                  >{{ field.label }}</app-node-widget>
+                </div>
+              }
+            }
+          </div>
+        }
+
+        @if (testResult(); as result) {
+          <div class="verdict" [class.is-bad]="!result.ok">
+            <app-icon [name]="result.ok ? 'check' : 'warning'" [size]="13" [weight]="2.5" />
+            <div class="verdict__body">
+              <p class="verdict__message">{{ result.message }}</p>
+              @for (line of result.details; track $index) {
+                <p class="verdict__line">{{ line }}</p>
+              }
+            </div>
+          </div>
+        }
+      </section>
+    </div>
+
+    <footer class="dialog__foot">
+      @if (schema()?.testable) {
+        <button class="button" type="button" [disabled]="testing()" (click)="test()">
+          <app-icon name="bulb" [size]="13" />
+          {{ testing() ? 'Testing…' : 'Test' }}
+        </button>
+      }
+      @if (selected()) {
+        <button class="button" type="button" (click)="duplicate()">
+          <app-icon name="copy" [size]="13" />
+          Duplicate
+        </button>
+        @if (confirmingDelete()) {
+          <button class="button button--danger" type="button" (click)="deleteSelected()">
+            <app-icon name="trash" [size]="12" />
+            Delete for good
+          </button>
+          <button class="button" type="button" (click)="cancelDelete()">Keep</button>
+        } @else {
+          <button class="button button--quiet" type="button" (click)="askDelete()">
+            <app-icon name="trash" [size]="12" />
+            Delete
+          </button>
+        }
+      }
+
+      <span class="dialog__status" [class.is-error]="failure()">
+        @if (failure()) {
+          {{ failure() }}
+        } @else if (notice()) {
+          {{ notice() }}
+        } @else if (dirty()) {
+          Unsaved changes
+        }
+      </span>
+
+      <button class="button" type="button" [disabled]="!canSave() || !dirty()" (click)="save()">
+        {{ saving() ? 'Saving…' : 'Save' }}
+      </button>
+      <button class="button button--primary" type="button" [disabled]="saving()" (click)="finish()">
+        {{ dirty() && canSave() ? 'Save & use' : 'Use this profile' }}
+      </button>
+    </footer>
+  </div>
+}

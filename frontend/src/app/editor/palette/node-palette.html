@@ -1,5 +1,23 @@
 <header class="panel-head">
-  <span class="panel-head__tab is-active">Nodes</span>
+  <button
+    class="panel-head__tab"
+    type="button"
+    [class.is-active]="tab() === 'nodes'"
+    (click)="showTab('nodes')"
+  >
+    Nodes
+  </button>
+  <button
+    class="panel-head__tab"
+    type="button"
+    [class.is-active]="tab() === 'presets'"
+    (click)="showTab('presets')"
+  >
+    Presets
+    @if (presetTotal() > 0) {
+      <span class="panel-head__count">{{ presetTotal() }}</span>
+    }
+  </button>
 </header>
 
 <div class="search">
@@ -10,7 +28,7 @@
     placeholder="Search…"
     [value]="query()"
     (input)="onSearch($event)"
-    aria-label="Search nodes"
+    [attr.aria-label]="tab() === 'nodes' ? 'Search nodes' : 'Search presets'"
   />
   @if (isSearching()) {
     <button class="search__clear" type="button" (click)="clearSearch()" aria-label="Clear search">×</button>
@@ -18,10 +36,104 @@
 </div>
 
 @if (isSearching()) {
-  <p class="result-count">{{ matchCount() }} {{ matchCount() === 1 ? 'match' : 'matches' }}</p>
+  @let found = tab() === 'nodes' ? matchCount() : presetCount();
+  <p class="result-count">{{ found }} {{ found === 1 ? 'match' : 'matches' }}</p>
 }
 
 <div class="scroller">
+  @if (tab() === 'presets') {
+    @if (presetError()) {
+      <div class="notice notice--error">
+        <app-icon name="warning" [size]="18" />
+        <p>Could not reach the engine.</p>
+        <p class="notice__detail">{{ presetError() }}</p>
+      </div>
+    }
+
+    @for (group of presetGroups(); track group.name) {
+      <section class="category accent-violet">
+        <div class="section-label"><span>{{ group.name }}</span></div>
+        <div class="category__body">
+          @for (preset of group.entries; track preset.id) {
+            <!--
+              The row is a container, not the draggable item. Foblex's fExternalItem sets
+              `pointer-events: none` on every descendant of its host so that a drag always targets
+              the item itself — which silently made a delete button nested inside it unclickable.
+              Keeping the button a *sibling* of the draggable is the fix, and it is the library's
+              own rule rather than a workaround for it.
+            -->
+            <div class="entry-row" [class.is-orphan]="isOrphan(preset)">
+              <button
+                class="entry entry--preset"
+                type="button"
+                fExternalItem
+                [fData]="presetPrefix + preset.id"
+                [attr.title]="describe(preset)"
+                (dblclick)="addPreset(preset)"
+                (keydown.enter)="addPreset(preset)"
+              >
+                <span class="entry__bar"></span>
+                <app-icon class="entry__icon" name="bookmark" [size]="13" />
+                <span class="entry__label">
+                  {{ preset.name }}
+                  <!-- Which node this configures, because a name alone does not say — and a preset
+                       whose node type this engine no longer serves says that too. -->
+                  <small class="entry__sub">{{ isOrphan(preset) ? preset.nodeType + ' (unknown)' : preset.label }}</small>
+                </span>
+              </button>
+
+              @if (confirming() === preset.id) {
+                <!-- Deleting a preset removes a file from the engine's disk, and no undo reaches
+                     it. One extra click is the whole of the safety net, so it is spelled out
+                     rather than left to a browser confirm nobody reads. -->
+                <button
+                  class="entry-row__confirm"
+                  type="button"
+                  title="Delete this preset for good"
+                  (click)="deletePreset(preset)"
+                >
+                  <app-icon name="trash" [size]="11" />
+                  Delete
+                </button>
+                <button
+                  class="entry-row__action"
+                  type="button"
+                  title="Keep it"
+                  aria-label="Cancel"
+                  (click)="cancelDelete()"
+                >
+                  <app-icon name="close" [size]="11" [weight]="2.5" />
+                </button>
+              } @else {
+                <button
+                  class="entry-row__action entry-row__action--delete"
+                  type="button"
+                  [attr.title]="'Delete “' + preset.name + '”'"
+                  [attr.aria-label]="'Delete ' + preset.name"
+                  (click)="askDelete(preset)"
+                >
+                  <app-icon name="trash" [size]="12" />
+                </button>
+              }
+            </div>
+          }
+        </div>
+      </section>
+    } @empty {
+      <div class="notice">
+        @if (isSearching()) {
+          <p>No presets match “{{ query() }}”.</p>
+        } @else {
+          <p>No saved configurations yet.</p>
+          <p class="notice__detail">
+            Set a node up the way you want it, right-click it and choose <b>Save as preset</b>. It is
+            kept on the engine, apart from any workflow, and appears here for every graph you build
+            afterwards.
+          </p>
+        }
+      </div>
+    }
+  } @else {
   @switch (state()) {
     @case ('loading') {
       <p class="notice">Loading nodes…</p>
@@ -80,6 +192,13 @@
       }
     }
   }
+  }
 </div>
 
-<footer class="panel-foot">Drag onto the canvas, or double-click to add</footer>
+<footer class="panel-foot">
+  @if (tab() === 'presets') {
+    Drag or double-click to add · right-click a node to save one
+  } @else {
+    Drag onto the canvas, or double-click to add
+  }
+</footer>

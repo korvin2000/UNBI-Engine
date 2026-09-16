@@ -26,7 +26,8 @@ public record NodeDescriptor(
         String accent,
         String description,
         List<NodeInput> inputs,
-        List<NodeOutput> outputs) {
+        List<NodeOutput> outputs,
+        List<NodeAction> actions) {
 
     public NodeDescriptor {
         if (id == null || !id.matches("[a-z0-9_]+\\.[a-z0-9_]+")) {
@@ -35,8 +36,24 @@ public record NodeDescriptor(
         }
         inputs = List.copyOf(inputs);
         outputs = List.copyOf(outputs);
+        actions = List.copyOf(actions == null ? List.of() : actions);
         requireUniqueKeys(inputs.stream().map(NodeInput::key).toList(), "input");
         requireUniqueKeys(outputs.stream().map(NodeOutput::key).toList(), "output");
+        requireUniqueKeys(actions.stream().map(NodeAction::key).toList(), "action");
+    }
+
+    /** Backwards-compatible shape for the nodes and tests that declare no actions. */
+    public NodeDescriptor(
+            String id,
+            String label,
+            String category,
+            String subcategory,
+            String icon,
+            String accent,
+            String description,
+            List<NodeInput> inputs,
+            List<NodeOutput> outputs) {
+        this(id, label, category, subcategory, icon, accent, description, inputs, outputs, List.of());
     }
 
     public NodeInput input(String key) {
@@ -78,11 +95,13 @@ public record NodeDescriptor(
         private final String label;
         private final List<NodeInput> inputs = new ArrayList<>();
         private final List<NodeOutput> outputs = new ArrayList<>();
+        private final List<NodeAction> actions = new ArrayList<>();
         private String category = "Utility";
         private String subcategory = "";
         private String icon = "node";
         private String accent = "slate";
         private String description = "";
+        private boolean lastDeclaredWasOutput;
 
         private Builder(String id, String label) {
             this.id = id;
@@ -112,36 +131,96 @@ public record NodeDescriptor(
 
         /** A socket-only input: it must be wired. */
         public Builder socket(String key, String label, PortType type) {
-            inputs.add(new NodeInput(key, label, type, true, true, null, null, null));
-            return this;
+            return addInput(new NodeInput(key, label, type, true, true, null, null, null));
         }
 
         /** An optional socket: leaving it unconnected is legal and yields null. */
         public Builder optionalSocket(String key, String label, PortType type) {
-            inputs.add(new NodeInput(key, label, type, false, true, null, null, null));
-            return this;
+            return addInput(new NodeInput(key, label, type, false, true, null, null, null));
         }
 
         /** A value that can be typed into the node or overridden by an edge. */
         public Builder field(String key, String label, PortType type, Widget widget, Object defaultValue) {
-            inputs.add(new NodeInput(key, label, type, false, true, widget, defaultValue, null));
-            return this;
+            return addInput(new NodeInput(key, label, type, false, true, widget, defaultValue, null));
         }
 
         /** Pure configuration: rendered in the node, never wired. */
         public Builder setting(String key, String label, PortType type, Widget widget, Object defaultValue) {
-            inputs.add(new NodeInput(key, label, type, false, false, widget, defaultValue, null));
+            return addInput(new NodeInput(key, label, type, false, false, widget, defaultValue, null));
+        }
+
+        /**
+         * Configuration that is correct as it stands, folded away until someone wants it.
+         *
+         * <p>The same as {@link #setting} plus a claim: leaving this alone produces a working node.
+         * Ranking the settings here is what lets a node with twenty of them stay four rows tall, and
+         * it has to be declared by whoever wrote the node — the editor cannot tell which two of a
+         * gateway's parameters the user actually came for.
+         */
+        public Builder advancedSetting(
+                String key, String label, PortType type, Widget widget, Object defaultValue) {
+            return addInput(new NodeInput(key, label, type, false, false, widget, defaultValue, null, true));
+        }
+
+        /** Moves the setting just declared into the advanced section. */
+        public Builder advanced() {
+            if (inputs.isEmpty() || lastDeclaredWasOutput) {
+                throw new IllegalStateException("advanced() must follow the setting it applies to");
+            }
+            inputs.add(inputs.removeLast().asAdvanced());
+            return this;
+        }
+
+        /** Shows the setting just declared only while a sibling setting holds one of these values. */
+        public Builder onlyWhen(String siblingKey, String... values) {
+            if (inputs.isEmpty() || lastDeclaredWasOutput) {
+                throw new IllegalStateException("onlyWhen() must follow the setting it applies to");
+            }
+            inputs.add(inputs.removeLast().shownWhen(NodeInput.ShowWhen.is(siblingKey, values)));
+            return this;
+        }
+
+        /** A button the editor offers on this node before anything is run. */
+        public Builder action(NodeAction action) {
+            actions.add(action);
+            return this;
+        }
+
+        private Builder addInput(NodeInput input) {
+            inputs.add(input);
+            lastDeclaredWasOutput = false;
             return this;
         }
 
         public Builder out(String key, String label, PortType type) {
             outputs.add(NodeOutput.of(key, label, type));
+            lastDeclaredWasOutput = true;
+            return this;
+        }
+
+        /**
+         * One line of explanation for the input or output just declared.
+         *
+         * <p>Attached to the previous entry rather than passed to every factory: hints are the
+         * exception, and threading an extra argument through eight overloads to carry a null would
+         * cost every node file a column of noise for the few that need it.
+         */
+        public Builder hint(String hint) {
+            if (!outputs.isEmpty() && lastDeclaredWasOutput) {
+                var last = outputs.removeLast();
+                outputs.add(new NodeOutput(last.key(), last.label(), last.type(), hint));
+                return this;
+            }
+            if (inputs.isEmpty()) {
+                throw new IllegalStateException("hint() must follow the input or output it describes");
+            }
+            inputs.add(inputs.removeLast().withHint(hint));
             return this;
         }
 
         public NodeDescriptor build() {
             return new NodeDescriptor(
-                    id, label, category, subcategory, icon, accent, description, inputs, outputs);
+                    id, label, category, subcategory, icon, accent, description, inputs, outputs, actions);
         }
     }
 }

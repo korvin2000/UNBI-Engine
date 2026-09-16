@@ -1,0 +1,367 @@
+# UNBI-Engine — the LLM node pack
+
+> Design and rationale for `nodes/llm` and the `llm/` subsystem behind it.
+> Companion to [ARCHITECTURE.md](ARCHITECTURE.md); read that first for the node SPI and type lattice.
+
+## 1. What this pack has to do
+
+Talk to OpenRouter, llama.cpp, OmniRoute, OpenAI (Chat **and** Responses) and Codex, from a visual
+graph, for text-in/text-out, structured output, web search, multimodal attachments, streaming and
+batch — while keeping node UI, execution and provider quirks apart, and keeping secrets out of the
+files people share.
+
+The baseline is the `biomd-process` sub-project, which does exactly this job in TypeScript against
+these exact gateways and has the measurements to prove which of its decisions were load-bearing.
+The parts adapted here, and why, are listed in [§8](#8-what-was-taken-from-biomd-process).
+
+## 2. The shape of the pack
+
+```
+llm/                          the subsystem — no NodeDefinition lives here
+  spec/       ChatCall, ChatMessage, Attachment, ChatResult, TokenUsage, ResponseFormat,
+              EndpointSpec, ModelSpec, SamplingParams, LlmFailure, ProviderProfile —
+              the typed contract between a node and a provider
+  provider/   LlmProvider SPI + the two wire formats (chat completions, responses)
+              + SSE reader + HTTP transport
+  auth/       CredentialStore, CredentialSource, the Codex source
+  discovery/  GatewayDirectory + ModelListingReader — asking a gateway about itself
+  runtime/    RequestPacer (rpm · spacing · concurrency), CapabilityCheck, LlmCaller
+  prompt/     PromptTemplate
+nodes/llm/    LlmTypes + one class per node + EndpointProfiles (the endpoint profile schema)
+              + RequestPlan (which requests one node makes)
+profiles/     named, engine-side configurations referenced by id — generic, not LLM-specific
+presets/      node presets — generic, not LLM-specific
+```
+
+`llm/` has no Spring imports except where a bean is unavoidable (the store, the caller, the
+registry), matching `core/`'s rule for the same reason: every wire-format decision is then testable
+without a container or a socket.
+
+### 2.1 Ten nodes, not one
+
+One node with forty widgets is unreadable and one node per provider is four copies of the same
+logic. The split below follows *what changes together*:
+
+| Node | Produces | Why it is its own node |
+|---|---|---|
+| **Endpoint** | `LlmEndpoint` | Names a saved endpoint *profile*. One connection serves many models, and where it lives differs per machine — see [§3b](#3b-endpoint-profiles). |
+| **Model** | `LlmModel` | Capabilities, pricing and reasoning are properties of a model, not of a call. Several models share one endpoint. |
+| **Generation Params** | `LlmSampling` | Optional. Absent in the simple case; overrides model defaults when present. |
+| **Variables** | `LlmVariables` | Names upstream values so a template can read them. |
+| **Prompt Template** | `Text` | Editable text or a saved preset, rendered against variables. Used for system *and* user prompts — one node, two instances. |
+| **Prompt Variants** | `Text[]` | Several prompts in one box, separated by `---`; wired into a prompt, each becomes its own request. |
+| **Attach Files** | `LlmAttachment[]` | Turns `FileRef[]` from the files pack into typed multimodal parts. |
+| **LLM Request** | `Text` + `LlmResult[]` + `Text[]` | The call — or one call per item, decided by what is wired in. See [§2.3](#23-one-request-node-that-iterates). |
+| **Parse JSON** | `Any` + `Text` | Fences, pointers, strict/lenient. |
+| **Save Result** | `FileRef` | Writes, and hands the file back to the files pack. |
+
+Alongside them, in the files pack: **Load Dataset** reads a JSON, JSON Lines, CSV or plain-text
+file into a list of items, which is what a batch iterates over.
+
+The simple workflow is three nodes: `Endpoint → Model → LLM Request`. Everything else is opt-in.
+
+### 2.2 Types on the wire between nodes
+
+```
+LlmEndpoint     opaque handle — carries a credential *reference*, never a secret
+LlmModel        opaque handle — endpoint + model + capabilities + pricing
+LlmSampling     opaque handle
+LlmVariables    opaque handle — a named map
+LlmAttachment   opaque handle — an image, a document, or text read from a file
+LlmResult       Struct{ text, finishReason, model, promptTokens, completionTokens,
+                        reasoningTokens, costUsd, latencyMillis, sources }
+```
+
+`LlmResult` is a struct rather than a handle so that `Preview` and `Generate Report` — which accept
+`Any` and reflect over record components — render it as a table without knowing this pack exists.
+Its fields and the record behind it are held to each other by `LlmTypeShapeTest`, because nothing
+else connects the two but a programmer's memory.
+
+The handles are `Primitive`s because nothing downstream should reach inside them. `Attachment` is
+deliberately a class rather than a record for the same family of reason: a record would put a base64
+payload into a table cell the moment someone wired one into a preview.
+
+### 2.3 One request node that iterates
+
+There used to be an LLM Request and an LLM Batch, with different sockets, different template rules
+and different outputs, and the user had to decide up front which of two shapes their problem had.
+The shape is already visible in what is wired in, so one node reads it:
+
+- **A single value on an input applies to every request; a list makes one request per entry.**
+  This holds for System Prompt, User Prompt, Data and Attachments alike.
+- **Several lists** either **pair up by position** (the third system prompt with the third item)
+  or **cross** (every system prompt against every item) — one setting, *Combine Lists*, because
+  inferring it would be a guess.
+- Both prompts are templates rendered per request: `{{item}}`, `{{index}}`, `{{count}}`, a file's
+  `{{name}}` and `{{path}}`, an attachment's `{{file}}`, a dataset row's columns by name, and
+  anything from a Variables node.
+- Attachments have one extra choice, *Attach: all in one request / one request per file*, since a
+  list of attachments is ambiguous in a way a list of prompts is not.
+
+`RequestPlan` turns the wired inputs into the requests to make, and it is pure, so every shape a
+batch can take is a row in `RequestPlanTest` rather than a run against a gateway:
+
+| Want | Wire |
+|---|---|
+| Try three system prompts on the same document | Prompt Variants → System Prompt; the document on Data or User Prompt |
+| Ask several questions of one system prompt | Prompt Variants → User Prompt |
+| One file per request | Attach Files → Attachments, *one request per file* |
+| All files in one request | Attach Files → Attachments, *all in one request* (the default) |
+| One request per row of a spreadsheet | Load Dataset → Data; `{{column}}` in the prompt |
+| X system prompts by Y user prompts | both from Prompt Variants; *Combine Lists: every combination* |
+
+Outputs are `Text` (the answer, or every answer separated by a blank line), `Results[]`,
+`Texts[]`, `Cost` and `Failures`. A batch counts a failed request and goes on; the node fails only
+when nothing answered, which covers the single request naturally. Streaming is on for a single
+request and off for a batch, where several answers at once would interleave into one ribbon.
+
+## 3. Secrets
+
+**A credential never enters a workflow file.** The Endpoint node stores a *name*; the value is
+resolved at call time from a `CredentialStore` fed by ordered sources:
+
+| Source | Where it reads | Ref it answers to |
+|---|---|---|
+| environment | `UNBI_LLM_KEY_<NAME>` | any |
+| file | `credentials.properties` under the engine's data directory | any |
+| codex | `CODEX_AUTH_JSON`, else `~/.codex/auth.json` | `codex` |
+
+`GET /api/credentials` returns credential **names only**, so the editor can offer a dropdown without
+the browser ever holding a key; there is no endpoint that could return a value, and
+`Credential.toString()` redacts. A missing reference fails the node — and the test button — with the
+name it looked for and every place it looked, which is the one error message in this subsystem that
+always has to be actionable. The gateway's own 401 is not it, so the directory refuses to probe with
+a name it cannot resolve rather than reporting whatever the gateway says about a missing header.
+
+A key can also be *added* from the editor: the credential widget in the endpoint profile dialog
+posts a name and a value once to `POST /api/credentials`, which writes it into
+`credentials.properties` on the engine. It is never read back — from that moment it is a name in a
+dropdown, exactly as a key set in the environment is. Only the file source is writable from there;
+a variable in the engine's environment is the deployment's decision.
+
+## 3b. Endpoint profiles
+
+**A base URL never lives in a workflow file, and never in the code.** The first is wrong the moment
+the file moves machines; the second was measured producing exactly one outcome — `Connection
+refused` against a `localhost` nobody was running — on every machine but the author's. So the
+address lives in an **endpoint profile**: a named configuration saved on the engine under
+`profiles/llm.endpoint/<id>.json`, holding the gateway kind, the base URL, authentication, the
+credential *name*, streaming, timeout, pacing and extra headers. The Endpoint node holds the
+profile's id and nothing else. A workflow that says "openrouter" runs unchanged wherever a profile
+called openrouter exists, and points at whatever that machine means by it.
+
+A profile is not a preset, and the two stores are deliberately separate. A preset is *copied* into a
+node when it is dropped on the canvas; a profile is *referenced* and resolved when the node runs.
+Putting an endpoint in the Presets tab as something to drop onto a canvas would embed the URL again.
+
+The mechanism is generic. `ProfileSchema` is an SPI bean — id, label, a list of `NodeInput` fields,
+an optional `test` — discovered by injection like nodes and credential sources; `ProfileStore`
+keeps the files; `ProfileController` serves the schema *as a form* alongside the profiles. The
+editor's profile dialog draws whatever fields the engine declared, with the same widgets a node
+uses, and knows nothing about endpoints. `EndpointProfiles` is the one schema so far and the one
+place an `EndpointSpec` is built from values, so the node, the test button, the model listing and the
+request check cannot disagree about which URL, which credential or which headers were meant.
+
+The gateway **kind** (`openrouter`, `llamacpp`, `omniroute`, `openai`, `codex`, `custom`) is a field
+of the profile. It carries what genuinely differs between gateways on the wire — auth scheme, probe
+path, preferred wire format, cached-token accounting, a pacing default, a note — and no address.
+
+### Codex, honestly
+
+Codex's OAuth client id, authorize and token endpoints are not public API. Rather than guess them,
+this pack **reads the credentials the `codex` CLI already wrote** (`~/.codex/auth.json`, documented,
+stable, and auto-refreshed by that CLI while it is in use) and sends them as
+`Authorization: Bearer …` plus `chatgpt-account-id`, `originator` and `OpenAI-Beta` against a
+**configurable** base URL — configurable because that URL has moved at least once. An expired token
+fails with "run `codex login`", which is the true remedy.
+
+The seam for a first-party flow is `CredentialSource`: a future device-code or PKCE implementation
+is one more bean, and nothing else changes. That is also where a Claude SDK / Claude Code MCP
+credential would attach — *credential acquisition* and *what an integration exposes* are separate
+questions, and only the first one is settled here.
+
+## 4. Providers: quirks are data
+
+Two wire formats, one HTTP transport:
+
+- `chat_completions` — OpenRouter, llama.cpp, OmniRoute chat, OpenAI
+- `responses` — OmniRoute `cx/*`, OpenAI Responses, Codex (Responses only)
+
+Everything that differs between gateways is a **field**, not a branch:
+
+| Field | Lives on | Exists because |
+|---|---|---|
+| `authScheme` | endpoint | llama.cpp takes no key; Codex takes three headers |
+| `stream` | endpoint | OmniRoute returns *another request's* completion when two buffered calls overlap |
+| `chatCachedTokens` | endpoint | some gateways report cached tokens *in addition to* `prompt_tokens` |
+| `responsesPromptCache` | endpoint | some gateways reject explicit cache controls |
+| `maxTokensParam` | model | reasoning-era models reject `max_tokens`; some gateways reject the new name. `auto` derives it from the model, `none` sends no ceiling at all, and an output ceiling of 0 means the same — asking for no limit had no spelling before |
+| `reasoningDialect` | model | `reasoning_effort` · `reasoning` · `thinking` · say nothing at all |
+| `webSearchMode` | model | hosted tool · `:online` suffix · plugin · hosted search model |
+| `providerOrder` / `requireParameters` | model | one OpenRouter model id is served by many hosts, and they silently drop parameters they do not implement |
+
+A gateway **kind** (`ProviderProfile` in the code: `openrouter`, `llamacpp`, `omniroute`, `openai`,
+`codex`, `custom`) is a pre-filled set of those fields, chosen in the endpoint profile dialog. Every
+option that defers to it says "From gateway", and what the kind supplied is logged when the node
+runs. A gateway that behaves unexpectedly is then a field to change, not a code path to find.
+
+Two words, two things: the *gateway* is what kind of server it is; the *profile* is the saved,
+named configuration that says where that server is and how to reach it ([§3b](#3b-endpoint-profiles)).
+
+## 4b. Discovery: a first draft, never a claim
+
+A model name typed from memory and eight capability boxes ticked by guesswork is not a declaration —
+it is the same guess with more steps, and the capability check then holds every request to it. So
+the Model list asks the gateway by itself the first time it is opened — an *automatic* action,
+cached per node instance and per upstream configuration, so rewiring the endpoint refreshes it and
+opening it twice asks once — and the bulb in the node header checks the chosen model and writes the
+answer into the fields, where it stays visible, editable and undoable.
+
+`ModelListingReader` turns three genuinely different `/v1/models` shapes into one:
+
+| Gateway | What it publishes |
+|---|---|
+| OpenRouter | `supported_parameters`, `architecture.input_modalities`, per-token prices as decimal **strings**, `top_provider.max_completion_tokens`, `reasoning.{mandatory,default_enabled,supported_efforts,default_effort}` |
+| OmniRoute | `api_format`, a `capabilities` object, `effort_tiers`, an explicit `max_output_tokens` |
+| llama.cpp | an id and `meta.n_ctx`, and nothing else at all |
+
+Three rules keep it honest, and each one is a test:
+
+- **Nothing is inferred.** A gateway silent about pricing leaves the price alone. Null means "not
+  discovered", never "free" — an invented number is the one the capability check would enforce.
+- **Only what was answered is written.** The probe returns the fields the gateway spoke about and no
+  others, so a discovery cannot blank a value somebody set deliberately.
+- **Facts that belong together travel together.** A reasoning *dialect* without the reasoning
+  *switch* means "send an instruction not to reason", which a model that reasons mandatorily rejects
+  on every call — measured, on a live gateway, as `Reasoning is mandatory for this endpoint and
+  cannot be disabled`. The two are discovered as one fact, and so is the effort tier: a gateway's
+  stated default wins, a tier the user chose is kept when the model accepts it, and only an
+  unsupported one is replaced.
+
+Discovery also feeds the editor without the editor learning anything. Once the Model node holds a
+capability list, the LLM Request node's Response Format dropdown offers only the formats that list
+contains — a `Widget.Dropdown.narrowedBy` rule the descriptor carries and the browser evaluates, with
+no button to press and no knowledge there of what a model or a response format is.
+
+### Testing a connection is not the same as listing models
+
+`GatewayDirectory.check` probes whatever the profile nominates, because a model listing is not
+universally an authentication check: OpenRouter serves its catalogue unauthenticated and answers 200
+for a key revoked an hour ago. `ProviderProfile.probePath` is therefore a field — `/key` there,
+`/models` everywhere else — which is [§4](#4-providers-quirks-are-data)'s rule applied to discovery.
+
+Both paths resolve the endpoint through `LlmEndpointNode.resolve` and `EndpointProfiles.build`,
+the functions a *run* uses, so a green light and a working run cannot disagree about which URL, which
+credential or which headers the node meant.
+
+## 5. Capabilities are checked, not hoped for
+
+Before a request is built, `CapabilityCheck` compares what the call asks for against what the model
+*declares*:
+
+- `json_schema` / `json_object` response format → the matching capability
+- attachments → `vision` (images) or `files` (documents)
+- web search → `web_search` **and** a `webSearchMode`
+- web search + JSON mode → refused: the configured gateways answer `400 Web Search cannot be used
+  with JSON mode`
+
+Findings are `ERROR` or `WARNING`. The node's **Strict** toggle (on by default) decides whether an
+`ERROR` fails the node or degrades with a loud log. Silently dropping the field — which is what
+sending `response_format` to a model that ignores it amounts to — is the behaviour this exists to
+prevent.
+
+## 6. Pacing, cancellation, streaming
+
+`RequestPacer` is one per endpoint id: a requests-per-minute token bucket, a concurrency semaphore,
+and a floor on the gap between two *dispatches*. The floor is not the bucket: a bucket starts full,
+so 60/min happily lets sixty requests leave in the same millisecond — which is precisely the arrival
+pattern that breaks a gateway that mishandles overlap.
+
+Cancellation is checked between SSE lines and between batch items, so a long generation stops at the
+next chunk rather than at the end of the call.
+
+Streaming adds one engine event, `node.stream`, and one `NodeContext` method, `stream(key, chunk)`.
+It is a *preview* channel: the complete value always arrives through `output()`, so a context that
+does not implement it loses live text and never loses data. That is why its default is a no-op.
+
+## 7. Presets — and why a saved prompt is one
+
+A preset is `{ id, name, group, nodeType, description, values }`, stored as one JSON file per preset
+under the engine's data directory — **separate from workflow files**, which is the requirement:
+a prompt worth keeping outlives the graph it was written in.
+
+The full-window prompt editor reads and writes *these*, as presets of the `llm.prompt` node type,
+rather than keeping a library of its own. One store means a prompt saved from an LLM Request node
+appears in the Presets tab, in every other prompt editor, and can be dropped onto a canvas as a
+configured Prompt Template node — and it means there is exactly one place to delete it from. A
+second "prompt library" would have been a second place for the same thing to live, a second place to
+search it, and a second place to forget to clean it up.
+
+- `GET /api/presets?type=&group=&q=` — discovery by type, group and name
+- `POST /api/presets`, `DELETE /api/presets/{id}`
+- the editor's palette gains a **Presets** section; dropping one creates that node type with those
+  values already filled in
+- a node carries an optional user-given **title**, which is what "discovery by name" is about at the
+  canvas end
+
+Presets hold widget values, and widget values never hold secrets — the Endpoint node stores a
+credential *name* — so a preset is safe to share by construction rather than by a filter.
+
+## 8. What was taken from `biomd-process`
+
+Adapted, with the reasoning intact:
+
+| Taken | Where it lives now |
+|---|---|
+| request-body construction as a **pure function** of (target, request) | `ChatWire` / `ResponsesWire` — tested without a socket, which is the only way to tell a parameter that was *configured* from one that was *sent* |
+| `response_format` gated on declared capability | `ChatWire.responseFormat` |
+| reasoning dialects, and `dialect: none` meaning "say nothing" | `ReasoningDialect` |
+| streamed reassembly into the non-streamed shape | `ChatWire.reassemble`, `ResponsesWire.reassemble` |
+| the `response.incomplete` terminal event carrying usage and truncation | `ResponsesWire` |
+| cached-token accounting modes (`included` / `additional`) | `TokenUsage` mapping |
+| provider routing block, omitted entirely when empty | `ChatWire.provider` |
+| error taxonomy with retry/fallback dispositions | `LlmFailure` |
+| rpm bucket + concurrency + **dispatch spacing** | `RequestPacer` |
+| web-search *evidence* rather than URLs written in prose | `ChatResult.sources` |
+
+Deliberately **not** taken: routing pools, adaptive strategies, budget guards, circuit breakers,
+translation memory. They are the shape of a batch corpus tool, not of a node in a visual graph —
+here the user picks the model by wiring one, and the graph is the fallback chain.
+
+## 9. Verification, decided before implementation
+
+| Rung | What it catches |
+|---|---|
+| `PromptTemplateTest` | substitution, escaping, unknown-variable policy, variable discovery |
+| `ChatWireTest` · `ResponsesWireTest` | exactly what goes on the wire, per gateway quirk |
+| `WireResponseTest` | usage mapping, finish reasons, SSE reassembly, search evidence |
+| `CapabilityCheckTest` | every incompatibility and the sentence it produces |
+| `RequestPacerTest` | bucket, spacing and concurrency, on an injected clock |
+| `CredentialStoreTest` | resolution order, redaction, Codex `auth.json`, the missing-ref message |
+| `LlmNodesTest` | each node against a recording context and a stub provider, including every batch shape |
+| `RequestPlanTest` | which requests a set of wired inputs produces: broadcasting, pairing, crossing, bindings |
+| `PresetStoreTest` · `ProfileStoreTest` | round-trip, query, delete, path safety; defaults filled in for a partial file |
+| `LoadDatasetNodeTest` | JSON, JSON Lines, CSV with quoting and sniffed delimiters, plain lines |
+| `LlmProviderHttpTest` | the real HTTP path, streamed and buffered, against a JDK `HttpServer` |
+| `ModelListingReaderTest` | what three real gateways published, and what was concluded from it — including everything that was *not* |
+
+## 10. Deliberately not in this pack
+
+Named so they are choices: tool/function calling round-trips (the capability is declared and
+validated, the loop is not implemented), Anthropic's native Messages format, MCP servers, and
+embeddings.
+
+Image *generation* is also not here yet, and the reason is verification rather than design. The
+shape is small — a capability, a request toggle, `modalities: ["image","text"]` on the wire, image
+parts read back from the answer, Save Result writing them to files — and the iteration in
+[§2.3](#23-one-request-node-that-iterates) already covers "one image per request". But none of the
+models this pack has been allowed to test against produce images, and a wire path that has never
+been driven against a real gateway is exactly the kind of code this document argues against
+shipping. Image *analysis* per request works today: Attach Files → Attachments with *one request
+per file*.
+
+Model discovery from `/v1/models` **was** on this list, on the grounds that it would need credentials
+in a browser round trip. It is now implemented, and that objection turned out to name the design
+rather than block it: the browser never holds a credential, because the probe runs on the engine and
+the editor sends only widget values — see
+[ARCHITECTURE §6b](ARCHITECTURE.md#6b-asking-before-running).

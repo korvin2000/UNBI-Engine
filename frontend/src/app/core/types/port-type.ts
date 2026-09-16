@@ -85,6 +85,10 @@ export function typeKey(type: PortType): string {
  * cannot be connected to each other, but they are the *same subject*, and colouring them alike is
  * what lets you follow files through a graph at a glance. The port's shape and the connection rules
  * still keep them apart.
+ *
+ * A union whose members all share one colour — `Text | Text[]`, the "one prompt or several" port —
+ * takes that colour for the same reason; only a union of genuinely different subjects gets the
+ * neutral union colour.
  */
 export function portColourKey(type: PortType): string {
   switch (type.kind) {
@@ -93,8 +97,10 @@ export function portColourKey(type: PortType): string {
       return cssSafe(type.name);
     case 'list':
       return portColourKey(type.element);
-    case 'union':
-      return 'Union';
+    case 'union': {
+      const keys = new Set(type.members.map(portColourKey));
+      return keys.size === 1 ? [...keys][0] : 'Union';
+    }
     case 'any':
       return 'Any';
   }

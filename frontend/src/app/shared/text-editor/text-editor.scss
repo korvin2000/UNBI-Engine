@@ -1,0 +1,370 @@
+// The full-window text editor. Rendered once by the shell, above everything, for the same reason
+// the file picker and the preset dialog are: it is opened from inside the transformed canvas and
+// must not be clipped or scaled by it.
+//
+// Sized to the viewport rather than to the content. A prompt is written by reading it back, and a
+// dialog that grows with the text would put the end of a long one off screen exactly when it
+// matters most — so the frame is fixed and the text scrolls inside it.
+
+:host {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: contents;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 15, 0.62);
+  backdrop-filter: blur(2px);
+  animation: fade-in 120ms var(--ease);
+}
+
+.dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  width: min(940px, 94vw);
+  height: min(760px, 88vh);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
+  overflow: hidden;
+  animation: dialog-in 150ms var(--ease);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 10px)) scale(0.985);
+  }
+}
+
+.dialog__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent);
+}
+
+.dialog__title {
+  flex: 1;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dialog__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  transition: background var(--tempo) var(--ease), color var(--tempo) var(--ease);
+
+  &:hover {
+    background: var(--panel-raised);
+    color: var(--text);
+  }
+}
+
+// --- Toolbar ---------------------------------------------------------------
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--panel-sunken);
+}
+
+.toolbar__spacer {
+  flex: 1;
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 11.5px;
+  transition: border-color var(--tempo) var(--ease), color var(--tempo) var(--ease);
+
+  &:hover {
+    border-color: var(--accent);
+  }
+
+  &.is-open {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
+
+.tool__chevron {
+  transition: transform var(--tempo) var(--ease);
+
+  &.is-open {
+    transform: rotate(180deg);
+  }
+}
+
+.counts {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+// --- The name strip and the template list ----------------------------------
+
+.strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: none;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--panel);
+}
+
+.strip__label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.strip__input {
+  flex: 1;
+  min-width: 180px;
+}
+
+.strip__note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.library {
+  flex: none;
+  max-height: 38%;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--panel);
+}
+
+.library__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 9px 12px 6px;
+  color: var(--text-faint);
+}
+
+.library__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0 8px 6px;
+  list-style: none;
+
+  button {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    text-align: left;
+    color: var(--text);
+
+    &:hover,
+    &:focus-visible {
+      background: var(--panel-raised);
+      outline: none;
+    }
+  }
+}
+
+.library__name {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.library__group {
+  padding: 0 5px;
+  background: var(--panel-sunken);
+  border-radius: 3px;
+  color: var(--text-faint);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+// One line of the prompt itself. Two templates called "Summarise" are only told apart by this.
+.library__preview {
+  min-width: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.library__empty {
+  padding: 12px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+.library__note {
+  flex: none;
+  margin: 0;
+  padding: 0 12px 8px;
+  color: var(--warn);
+  font-size: 10.5px;
+}
+
+// --- The text itself -------------------------------------------------------
+
+.editor {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--panel-sunken);
+  border: none;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+
+  &::placeholder {
+    color: var(--text-faint);
+  }
+
+  &:focus {
+    box-shadow: inset 0 0 0 1px var(--accent-soft);
+  }
+}
+
+.editor--mono {
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.field {
+  width: 100%;
+  padding: 6px 9px;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--tempo) var(--ease), box-shadow var(--tempo) var(--ease);
+
+  &::placeholder {
+    color: var(--text-faint);
+  }
+
+  &:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+}
+
+.message {
+  flex: none;
+  margin: 0;
+  padding: 7px 14px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.message--error {
+  color: var(--danger);
+}
+
+.dialog__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-sunken);
+}
+
+.dialog__hint {
+  flex: 1;
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+
+.button {
+  padding: 6px 14px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  transition: background var(--tempo) var(--ease), border-color var(--tempo) var(--ease);
+
+  &:hover:not(:disabled) {
+    border-color: var(--node-border-hover);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+
+  &:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+}

@@ -1,0 +1,136 @@
+@if (request(); as editing) {
+  <div class="scrim" (click)="cancel()"></div>
+
+  <div
+    class="dialog"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-label]="'Edit ' + editing.title"
+    (keydown)="onKeydown($event)"
+  >
+    <header class="dialog__head">
+      <app-icon name="document" [size]="15" />
+      <h2 class="dialog__title">{{ editing.title }}</h2>
+      <button class="dialog__close" type="button" aria-label="Close" (click)="cancel()">
+        <app-icon name="close" [size]="14" />
+      </button>
+    </header>
+
+    <div class="toolbar">
+      <button class="tool" type="button" (click)="loadFile()" title="Replace the text with a file's contents">
+        <app-icon name="open" [size]="13" />
+        Load from file
+      </button>
+
+      @if (hasLibrary()) {
+        <button
+          class="tool"
+          type="button"
+          [class.is-open]="picking()"
+          (click)="togglePicker()"
+          title="Start from a saved prompt"
+        >
+          <app-icon name="bookmark" [size]="13" />
+          Templates
+          <app-icon class="tool__chevron" [class.is-open]="picking()" name="chevron" [size]="12" />
+        </button>
+
+        <button class="tool" type="button" (click)="startNaming()" title="Save this text under a name">
+          <app-icon name="save" [size]="13" />
+          Save as template
+        </button>
+      }
+
+      <span class="toolbar__spacer"></span>
+      <span class="counts" title="A rough estimate: four characters to a token">
+        {{ lines() }} {{ lines() === 1 ? 'line' : 'lines' }} ·
+        {{ characters() }} chars · ≈{{ tokenEstimate() }} tokens
+      </span>
+    </div>
+
+    @if (naming()) {
+      <div class="strip">
+        <label class="strip__label" for="template-name">Save as</label>
+        <input
+          id="template-name"
+          class="field strip__input"
+          type="text"
+          autofocus
+          placeholder="German summary"
+          [value]="templateName()"
+          (input)="onNameInput($event)"
+        />
+        <button class="button button--primary" type="button" [disabled]="!canSaveTemplate()" (click)="saveTemplate()">
+          Save
+        </button>
+        <button class="button" type="button" (click)="cancelNaming()">Cancel</button>
+        <p class="strip__note">
+          Kept on the engine as a preset, so it shows up in the Presets tab and in every prompt field.
+        </p>
+      </div>
+    }
+
+    @if (picking()) {
+      <div class="library">
+        <div class="library__search">
+          <app-icon name="search" [size]="13" />
+          <input
+            class="field"
+            type="search"
+            autofocus
+            placeholder="Search saved prompts…"
+            [value]="templateQuery()"
+            (input)="onTemplateSearch($event)"
+            aria-label="Search saved prompts"
+          />
+        </div>
+        <ul class="library__list" role="listbox">
+          @for (preset of templates(); track preset.id) {
+            <li>
+              <button type="button" role="option" [attr.aria-selected]="false" (click)="useTemplate(preset)">
+                <span class="library__name">{{ preset.name }}</span>
+                @if (preset.group) {
+                  <span class="library__group">{{ preset.group }}</span>
+                }
+                <!-- The first line of the prompt itself: two templates called "Summarise" are only
+                     told apart by what is in them. -->
+                <span class="library__preview">{{ textOf(preset) }}</span>
+              </button>
+            </li>
+          } @empty {
+            <li class="library__empty">
+              @if (templateQuery()) {
+                Nothing matches “{{ templateQuery() }}”.
+              } @else {
+                No saved prompts yet. Write one, then press <b>Save as template</b>.
+              }
+            </li>
+          }
+        </ul>
+        <p class="library__note">Choosing one replaces the text below.</p>
+      </div>
+    }
+
+    <textarea
+      class="editor"
+      [class.editor--mono]="editing.monospace"
+      spellcheck="false"
+      autofocus
+      [attr.placeholder]="editing.placeholder"
+      [value]="draft()"
+      (input)="onInput($event)"
+    ></textarea>
+
+    @if (failure()) {
+      <p class="message message--error">{{ failure() }}</p>
+    } @else if (notice()) {
+      <p class="message">{{ notice() }}</p>
+    }
+
+    <footer class="dialog__foot">
+      <span class="dialog__hint">Ctrl+Enter applies · Esc discards</span>
+      <button class="button" type="button" (click)="cancel()">Cancel</button>
+      <button class="button button--primary" type="button" (click)="save()">Apply</button>
+    </footer>
+  </div>
+}

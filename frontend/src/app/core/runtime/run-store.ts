@@ -12,6 +12,8 @@ export interface NodeRunStatus {
   readonly message: string | null;
   readonly durationMillis: number | null;
   readonly logs: readonly string[];
+  /** Text the node has streamed so far this run, while it is still producing it. */
+  readonly streamed: string;
 }
 
 export interface RunSummary {
@@ -27,7 +29,11 @@ const IDLE: NodeRunStatus = {
   message: null,
   durationMillis: null,
   logs: [],
+  streamed: '',
 };
+
+/** Past this, the live view is showing a wall of text nobody is reading. */
+const MAX_STREAMED_CHARS = 4000;
 
 /**
  * Folds the engine event stream into the state the editor renders.
@@ -83,10 +89,21 @@ export class RunStore {
           this.statuses.set(new Map(event.order.map((nodeId) => [nodeId, IDLE])));
           break;
 
+        case 'node.stream':
+          this.patch(event.nodeId, (status) => ({
+            ...status,
+            // Trimmed from the front: what a person watches is the end of the answer as it lands.
+            streamed: (status.streamed + event.chunk).slice(-MAX_STREAMED_CHARS),
+          }));
+          break;
+
         case 'node.state':
           this.patch(event.nodeId, (status) => ({
             ...status,
             state: event.state,
+            // Restarting a node clears what the last attempt streamed, so two runs never appear
+            // as one answer twice as long.
+            streamed: event.state === 'RUNNING' ? '' : status.streamed,
             // A terminal state carries a message only when something went wrong. Keeping the last
             // progress message otherwise is what leaves "142 files" on screen after a node
             // finishes, instead of blanking the one useful thing it reported.

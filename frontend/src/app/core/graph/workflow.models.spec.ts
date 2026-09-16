@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { WorkflowDoc, WorkflowNode, excludedFromRun } from './workflow.models';
 
 function node(id: string, disabled = false): WorkflowNode {
-  return { id, type: 'test.node', position: { x: 0, y: 0 }, values: {}, collapsed: false, disabled };
+  return { id, type: 'test.node', title: '', position: { x: 0, y: 0 }, values: {}, collapsed: false, disabled };
 }
 
 function edge(id: string, from: string, to: string) {

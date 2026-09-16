@@ -1,0 +1,189 @@
+// The save-preset dialog. Rendered once by the shell, above everything, for the same reason the
+// file picker is: it is opened from inside the transformed canvas and must not be clipped by it.
+
+:host {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: contents;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 15, 0.62);
+  backdrop-filter: blur(2px);
+  animation: fade-in 120ms var(--ease);
+}
+
+.dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  width: min(440px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
+  overflow: hidden;
+  animation: dialog-in 150ms var(--ease);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 10px)) scale(0.985);
+  }
+}
+
+.dialog__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent);
+}
+
+.dialog__title {
+  flex: 1;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dialog__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: background var(--tempo) var(--ease), color var(--tempo) var(--ease);
+
+  &:hover {
+    background: var(--panel-raised);
+    color: var(--text);
+  }
+}
+
+.dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.dialog__note {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.dialog__type {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+}
+
+.dialog__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 11.5px;
+}
+
+.field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-row__label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.field {
+  width: 100%;
+  padding: 6px 9px;
+  background: var(--panel-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--tempo) var(--ease), box-shadow var(--tempo) var(--ease);
+
+  &::placeholder {
+    color: var(--text-faint);
+  }
+
+  &:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+}
+
+.field--area {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.dialog__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-sunken);
+}
+
+.button {
+  padding: 6px 14px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--tempo) var(--ease), border-color var(--tempo) var(--ease);
+
+  &:hover:not(:disabled) {
+    border-color: var(--node-border-hover);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+
+  &:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+}

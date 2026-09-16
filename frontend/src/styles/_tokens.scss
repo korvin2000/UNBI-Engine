@@ -124,6 +124,16 @@ $port-types: (
   'FileEdit':  #38b2ac,
   'Union':     #e06fb0,
   'Any':       #9aa4b8,
+
+  // The LLM pack. The three configuration handles share a family so a connection chain reads as
+  // one thing being assembled; the result carries the pack's own accent because that is the value
+  // the rest of the graph actually consumes.
+  'LlmEndpoint':   #8b6ce0,
+  'LlmModel':      #a78bfa,
+  'LlmSampling':   #c4b5fd,
+  'LlmVariables':  #6ea8fe,
+  'LlmAttachment': #f0a868,
+  'LlmResult':     #5ed3b0,
 );
 
 @each $name, $colour in $port-types {

@@ -1,4 +1,4 @@
-package com.unbi.engine.transport.codec;
+package com.unbi.engine.json;
 
 import java.util.Collection;
 import java.util.Map;
@@ -8,9 +8,14 @@ import tools.jackson.databind.node.JsonNodeFactory;
 /**
  * Converts loose engine values to and from JSON nodes.
  *
- * <p>Widget defaults and graph values are deliberately untyped on the Java side — they are whatever
- * the node declared — so a small explicit converter is safer than handing arbitrary objects to a
+ * <p>Widget defaults, graph values, saved presets and a parsed model answer are all "whatever the
+ * node declared", so a small explicit converter is safer than handing arbitrary objects to a
  * general-purpose mapper and hoping.
+ *
+ * <p>Its own package, above transport and below everything else, because four places need this one
+ * rule: the catalog encoder, the graph decoder, the preset store and the JSON-parsing node. Four
+ * hand-written copies of "how does JSON become a graph value" is the textbook way for two of them to
+ * start disagreeing about whether 5 is an Integer.
  */
 public final class JsonValues {
 

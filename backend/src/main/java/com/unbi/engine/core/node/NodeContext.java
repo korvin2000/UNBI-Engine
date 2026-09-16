@@ -33,6 +33,21 @@ public interface NodeContext {
     boolean isCancelled();
 
     /**
+     * Partial output, while the node is still producing it.
+     *
+     * <p>A preview channel, not a second data path: the complete value always arrives through
+     * {@link #output}, so a context that ignores this loses live text and never loses data. That is
+     * exactly why the default does nothing — a test double has no obligation to implement it, and
+     * the one thing it could get wrong is unavailable to it.
+     *
+     * @param key   the output port this text is heading for
+     * @param chunk the text produced since the last call
+     */
+    default void stream(String key, String chunk) {
+        // The engine overrides this. Everywhere else, streamed text is simply not shown.
+    }
+
+    /**
      * Cooperative cancellation. Long loops should call this each iteration: the engine can only
      * stop a node at the points where the node allows it.
      */

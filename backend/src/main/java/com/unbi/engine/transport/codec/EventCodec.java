@@ -50,6 +50,12 @@ public final class EventCodec {
                 node.put("nodeId", logged.nodeId());
                 node.put("message", logged.message());
             }
+            case EngineEvent.NodeStream streamed -> {
+                node.put("type", "node.stream");
+                node.put("nodeId", streamed.nodeId());
+                node.put("portKey", streamed.portKey());
+                node.put("chunk", streamed.chunk());
+            }
             case EngineEvent.RunFinished finished -> {
                 node.put("type", "run.finished");
                 node.put("outcome", finished.outcome().name());

@@ -37,6 +37,16 @@ public sealed interface EngineEvent {
 
     record NodeLog(String runId, String nodeId, String message, Instant at) implements EngineEvent {}
 
+    /**
+     * Text a node has produced so far, before it finishes.
+     *
+     * <p>Separate from {@link NodeLog} because the two are folded differently: logs are lines to
+     * keep, a stream is one growing value to append to. Sending tokens as log lines would fill the
+     * node's log with fragments of a sentence and still not let the editor show the sentence.
+     */
+    record NodeStream(String runId, String nodeId, String portKey, String chunk, Instant at)
+            implements EngineEvent {}
+
     record RunFinished(String runId, RunOutcome outcome, String message, long durationMillis, Instant at)
             implements EngineEvent {}
 

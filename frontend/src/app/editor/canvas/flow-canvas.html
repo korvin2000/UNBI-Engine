@@ -41,7 +41,10 @@
           [fNodePosition]="entry.node.position"
           [node]="entry.node"
           [spec]="entry.spec"
+          [renaming]="renameRequested() === entry.node.id"
           (menuRequested)="openMenu($event)"
+          (renameRequested)="renameRequested.set($event)"
+          (renameFinished)="finishRename()"
         />
       }
     </ng-container>
@@ -94,6 +97,15 @@
   <div class="menu-backdrop" (pointerdown)="closeMenu()" (contextmenu)="$event.preventDefault(); closeMenu()"></div>
   <div class="menu" role="menu" [style.left.px]="open.x" [style.top.px]="open.y">
     @if (open.nodeId) {
+      <button type="button" role="menuitem" (click)="runMenu('rename')">
+        <app-icon name="tag" [size]="14" />
+        <span>Rename…</span>
+      </button>
+      <button type="button" role="menuitem" (click)="runMenu('save-preset')">
+        <app-icon name="bookmark" [size]="14" />
+        <span>Save as preset…</span>
+      </button>
+      <span class="menu__divider"></span>
       <button type="button" role="menuitem" (click)="runMenu('collapse')">
         <app-icon name="chevron" [size]="13" />
         {{ open.collapsed ? 'Expand' : 'Collapse' }}

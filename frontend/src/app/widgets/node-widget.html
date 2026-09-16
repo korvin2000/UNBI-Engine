@@ -1,17 +1,151 @@
 @let widget = spec();
 
+<!--
+  The list under a dropdown, a combo box, a profile picker and a credential picker: one template,
+  because the four differ in where their options come from and in nothing about how a list is
+  searched, scrolled, capped and picked from.
+-->
+<ng-template #listPanel>
+  <div class="select__panel">
+    @if (searchable() && !comboBox()) {
+      <!-- One gateway answers a model listing with over a thousand entries. A list that long is
+           not read, it is searched — so past a dozen options it grows a filter. -->
+      <div class="select__search">
+        <app-icon name="search" [size]="12" />
+        <input
+          type="search"
+          autofocus
+          placeholder="Filter…"
+          [value]="listQuery()"
+          (input)="onListSearch($event)"
+          (keydown.escape)="closeList()"
+          aria-label="Filter the options"
+        />
+      </div>
+    }
+    <ul class="select__list" role="listbox">
+      @for (option of visibleChoices(); track option.value) {
+        <li>
+          <button
+            type="button"
+            role="option"
+            [attr.aria-selected]="option.value === text()"
+            [class.is-current]="option.value === text()"
+            [attr.title]="option.label"
+            (click)="pickOption(option.value)"
+          >
+            <app-icon name="check" [size]="11" [weight]="3" />
+            <span class="select__text">
+              <span class="select__label">{{ option.label }}</span>
+              @if (option.detail) {
+                <span class="select__detail">{{ option.detail }}</span>
+              }
+            </span>
+            @if (option.note) {
+              <span class="select__note">{{ option.note }}</span>
+            }
+          </button>
+          @if (option.removable) {
+            <button
+              class="select__remove"
+              type="button"
+              [attr.title]="'Forget the key named ' + option.value"
+              [attr.aria-label]="'Forget ' + option.value"
+              (click)="removeCredential(option.value, $event)"
+            >
+              <app-icon name="trash" [size]="11" />
+            </button>
+          }
+        </li>
+      } @empty {
+        <li class="select__empty">
+          @if (discoveryNote()) {
+            {{ discoveryNote() }}
+          } @else if (listQuery()) {
+            Nothing matches “{{ listQuery() }}”
+          } @else {
+            {{ emptyLabel() }}
+          }
+        </li>
+      }
+    </ul>
+    @if (hiddenChoices() > 0) {
+      <p class="select__more">{{ hiddenChoices() }} more — keep typing to narrow it down</p>
+    }
+    @if (widget.kind === 'credential') {
+      @if (addingKey()) {
+        <!-- The key travels to the engine once and is never shown again — not even here, which is
+             why this is a password box and why nothing is kept after Save. -->
+        <form class="keyform" (submit)="saveCredential($event)">
+          <input
+            class="field keyform__name"
+            type="text"
+            autofocus
+            spellcheck="false"
+            placeholder="name, e.g. openrouter"
+            [value]="keyName()"
+            (input)="keyName.set($any($event.target).value)"
+            aria-label="Credential name"
+          />
+          <input
+            class="field keyform__secret"
+            type="password"
+            placeholder="the API key"
+            autocomplete="off"
+            [value]="keySecret()"
+            (input)="keySecret.set($any($event.target).value)"
+            aria-label="API key"
+          />
+          <div class="keyform__actions">
+            <button class="keyform__save" type="submit" [disabled]="!canSaveKey()">Save key</button>
+            <button class="keyform__cancel" type="button" (click)="cancelKey()">Cancel</button>
+          </div>
+          @if (credentialError()) {
+            <p class="keyform__error">{{ credentialError() }}</p>
+          }
+          <p class="keyform__note">Kept on the engine in credentials.properties. It can be named from now on, never read back.</p>
+        </form>
+      } @else {
+        <button class="select__add" type="button" (click)="startKey()">
+          <app-icon name="plus" [size]="11" />
+          Add a key…
+        </button>
+      }
+    }
+  </div>
+</ng-template>
+
 @switch (widget.kind) {
   @case ('text') {
     @if (widget.multiline) {
-      <textarea
-        class="field field--area"
-        rows="3"
-        [attr.placeholder]="widget.placeholder"
-        [value]="text()"
-        [disabled]="disabled()"
-        (input)="onText($event)"
-        fDragBlocker
-      ></textarea>
+      <div class="area" fDragBlocker>
+        <textarea
+          class="field field--area"
+          [class.field--mono]="widget.monospace"
+          [class.field--expandable]="widget.editor"
+          [attr.rows]="widget.rows || 3"
+          [attr.placeholder]="widget.placeholder"
+          [value]="text()"
+          [disabled]="disabled()"
+          (input)="onText($event)"
+        ></textarea>
+        @if (widget.editor) {
+          <!--
+            The node keeps its few rows and the writing happens in a dialog the size of a document.
+            Growing the node to fit a prompt trades one unreadable thing for an unreadable graph.
+          -->
+          <button
+            class="area__expand"
+            type="button"
+            title="Open in a larger editor — load from a file, or use a saved prompt"
+            aria-label="Open in a larger editor"
+            [disabled]="disabled()"
+            (click)="expand()"
+          >
+            <app-icon name="expand" [size]="12" />
+          </button>
+        }
+      </div>
     } @else {
       <input
         class="field"
@@ -35,14 +169,20 @@
         [attr.min]="widget.min"
         [attr.max]="widget.max"
         [attr.step]="widget.step"
-        [value]="numeric()"
+        [attr.placeholder]="widget.optional ? widget.blankLabel : null"
+        [value]="numberText()"
         [disabled]="disabled()"
         (input)="onNumber($event)"
         (blur)="onNumberCommit($event)"
         fDragBlocker
       />
-      @if (widget.unit) {
+      @if (widget.unit && numberText()) {
         <span class="unit">{{ widget.unit }}</span>
+      }
+      @if (widget.optional && !numberText()) {
+        <!-- An empty optional field is a value, not a gap. Naming it is what makes "no limit"
+             something a user dares to leave. -->
+        <span class="unit unit--blank">{{ widget.blankLabel }}</span>
       }
       <div class="spinner__buttons">
         <button
@@ -118,6 +258,69 @@
       app. This one is also the only way to show the selected option in the node's own type colours.
     -->
     <div class="select" fDragBlocker>
+      @if (widget.allowCustom) {
+        <!--
+          A combo box: one box that is typed into and picked from. The list can never be complete —
+          model names, a name the engine has not re-read — so typing is a first-class way in, and
+          what is typed also filters the list. Two boxes, one to pick and one to type, asked the
+          user which of them was the real value; this one is.
+        -->
+        <div class="combo" [class.is-open]="listOpen()">
+          <input
+            class="field combo__input"
+            type="text"
+            role="combobox"
+            spellcheck="false"
+            autocomplete="off"
+            [attr.aria-expanded]="listOpen()"
+            aria-haspopup="listbox"
+            [attr.placeholder]="placeholder()"
+            [value]="text()"
+            [disabled]="disabled()"
+            (input)="onComboInput($event)"
+            (focus)="openList()"
+            (keydown)="onSelectKeydown($event)"
+          />
+          <button
+            class="combo__toggle"
+            type="button"
+            tabindex="-1"
+            aria-label="Show the choices"
+            [disabled]="disabled()"
+            (click)="toggleList()"
+          >
+            <app-icon class="select__chevron" [class.is-open]="listOpen()" name="chevron" [size]="13" />
+          </button>
+        </div>
+      } @else {
+        <button
+          class="field select__button"
+          type="button"
+          role="combobox"
+          [attr.aria-expanded]="listOpen()"
+          aria-haspopup="listbox"
+          [disabled]="disabled()"
+          (click)="toggleList()"
+          (keydown)="onSelectKeydown($event)"
+        >
+          <span class="select__value">{{ selectedLabel() }}</span>
+          <app-icon class="select__chevron" [class.is-open]="listOpen()" name="chevron" [size]="13" />
+        </button>
+      }
+
+      @if (listOpen()) {
+        <ng-container *ngTemplateOutlet="listPanel" />
+      }
+    </div>
+  }
+
+  @case ('profile') {
+    <!--
+      A named configuration kept on the engine. The node stores the id; the button beside the list
+      opens the dialog where profiles are made, tested and edited — the fields it draws are the
+      engine's, so this widget knows nothing about what a profile contains.
+    -->
+    <div class="select profile" fDragBlocker>
       <button
         class="field select__button"
         type="button"
@@ -128,29 +331,113 @@
         (click)="toggleList()"
         (keydown)="onSelectKeydown($event)"
       >
-        <span class="select__value">{{ selectedLabel() }}</span>
+        <span class="select__value" [class.is-placeholder]="!text()">{{ selectedLabel() || 'Choose a profile…' }}</span>
+        <app-icon class="select__chevron" [class.is-open]="listOpen()" name="chevron" [size]="13" />
+      </button>
+      <button
+        class="profile__manage"
+        type="button"
+        [attr.title]="text() ? 'Edit this profile, or manage the others' : 'Create a profile'"
+        aria-label="Manage profiles"
+        [disabled]="disabled()"
+        (click)="manageProfiles()"
+      >
+        <app-icon name="edit" [size]="13" />
+      </button>
+
+      @if (listOpen()) {
+        <ng-container *ngTemplateOutlet="listPanel" />
+      }
+    </div>
+  }
+
+  @case ('credential') {
+    <!-- The name of a secret. Names come from the engine; a new one can be added from the list. -->
+    <div class="select" fDragBlocker>
+      <button
+        class="field select__button"
+        type="button"
+        role="combobox"
+        [attr.aria-expanded]="listOpen()"
+        aria-haspopup="listbox"
+        [disabled]="disabled()"
+        (click)="toggleList()"
+        (keydown)="onSelectKeydown($event)"
+      >
+        <app-icon class="select__lead" name="key" [size]="12" />
+        <span class="select__value" [class.is-placeholder]="!text()">{{ selectedLabel() || 'From the gateway kind' }}</span>
         <app-icon class="select__chevron" [class.is-open]="listOpen()" name="chevron" [size]="13" />
       </button>
 
       @if (listOpen()) {
-        <div class="select__backdrop" (pointerdown)="closeList()"></div>
-        <ul class="select__list" role="listbox">
-          @for (option of widget.options; track option.value) {
-            <li>
-              <button
-                type="button"
-                role="option"
-                [attr.aria-selected]="option.value === text()"
-                [class.is-current]="option.value === text()"
-                (click)="pickOption(option.value)"
-              >
-                <app-icon name="check" [size]="11" [weight]="3" />
-                <span>{{ option.label }}</span>
-              </button>
-            </li>
-          }
-        </ul>
+        <ng-container *ngTemplateOutlet="listPanel" />
       }
+    </div>
+  }
+
+  @case ('multiselect') {
+    <!--
+      A closed set the user picks from, rather than a comma-separated field. Spelling a capability
+      wrong in a text box fails by the feature silently not being sent, which is the one failure
+      this whole pack is built to avoid.
+    -->
+    <div class="chips" fDragBlocker>
+      @for (option of choices(); track option.value) {
+        <button
+          type="button"
+          class="chip"
+          role="switch"
+          [class.is-on]="isSelected(option.value)"
+          [attr.aria-checked]="isSelected(option.value)"
+          [disabled]="disabled()"
+          (click)="toggleOption(option.value)"
+        >
+          @if (isSelected(option.value)) {
+            <app-icon name="check" [size]="10" [weight]="3" />
+          }
+          <span>{{ option.label }}</span>
+        </button>
+      }
+    </div>
+  }
+
+  @case ('keyvalue') {
+    <div class="pairs" fDragBlocker>
+      @for (pair of pairs(); track pair.id) {
+        <div class="pairs__row">
+          <input
+            class="field pairs__key"
+            type="text"
+            spellcheck="false"
+            [attr.placeholder]="widget.keyPlaceholder"
+            [value]="pair.key"
+            [disabled]="disabled()"
+            (input)="editPairKey(pair.id, $event)"
+          />
+          <input
+            class="field pairs__value"
+            type="text"
+            spellcheck="false"
+            [attr.placeholder]="widget.valuePlaceholder"
+            [value]="pair.value"
+            [disabled]="disabled()"
+            (input)="editPairValue(pair.id, $event)"
+          />
+          <button
+            class="pairs__remove"
+            type="button"
+            title="Remove"
+            aria-label="Remove"
+            [disabled]="disabled()"
+            (click)="removePair(pair.id)"
+          >
+            <app-icon name="close" [size]="10" [weight]="2.5" />
+          </button>
+        </div>
+      }
+      <button class="pairs__add" type="button" [disabled]="disabled()" (click)="addPair()">
+        + Add
+      </button>
     </div>
   }
 
@@ -179,6 +466,47 @@
       >
         <app-icon name="folder-open" [size]="13" />
       </button>
+    </div>
+  }
+
+  @case ('filelist') {
+    <!--
+      A list, not a separated string: every separator worth using is legal inside a filename, so an
+      encoded one is a parser whose failure mode the user meets as a missing file. It also makes the
+      two things anyone wants to do — add one, remove the wrong one — exact rather than a text edit.
+    -->
+    <div class="files" [class.is-disabled]="disabled()" fDragBlocker>
+      @for (path of files(); track path) {
+        <div class="files__row">
+          <app-icon class="files__icon" name="document" [size]="12" />
+          <span class="files__name" [attr.title]="path">{{ fileName(path) }}</span>
+          <button
+            class="files__remove"
+            type="button"
+            [attr.title]="'Remove ' + fileName(path)"
+            [attr.aria-label]="'Remove ' + fileName(path)"
+            [disabled]="disabled()"
+            (click)="removeFile(path)"
+          >
+            <app-icon name="close" [size]="10" [weight]="2.5" />
+          </button>
+        </div>
+      } @empty {
+        <p class="files__empty">No files yet</p>
+      }
+
+      <div class="files__actions">
+        <button class="files__add" type="button" [disabled]="disabled()" (click)="addFile()">
+          <app-icon name="plus" [size]="11" />
+          Add file
+        </button>
+        @if (files().length > 1) {
+          <button class="files__clear" type="button" [disabled]="disabled()" (click)="clearFiles()">
+            Clear all
+          </button>
+          <span class="files__count">{{ files().length }} files</span>
+        }
+      </div>
     </div>
   }
 

@@ -22,6 +22,7 @@ const SOURCE: NodeSpec = {
   description: '',
   inputs: [],
   outputs: [{ key: 'files', label: 'Files', type: TEXT_LIST, hint: null }],
+  actions: [],
 };
 
 const SINK: NodeSpec = {
@@ -42,6 +43,8 @@ const SINK: NodeSpec = {
       widget: null,
       defaultValue: null,
       hint: null,
+      advanced: false,
+      showWhen: null,
     },
     {
       key: 'count',
@@ -49,12 +52,15 @@ const SINK: NodeSpec = {
       type: NUMBER,
       required: false,
       connectable: true,
-      widget: { kind: 'number', min: 0, max: 10, step: 1, unit: '' },
+      widget: { kind: 'number', min: 0, max: 10, step: 1, unit: '', optional: false, blankLabel: 'unset' },
       defaultValue: 1,
       hint: null,
+      advanced: false,
+      showWhen: null,
     },
   ],
   outputs: [{ key: 'done', label: 'Done', type: TEXT, hint: null }],
+  actions: [],
 };
 
 /** A catalog stub — the store only ever reads `byId`. */
@@ -63,7 +69,7 @@ class StubCatalog {
 }
 
 function node(id: string, type: string): WorkflowNode {
-  return { id, type, position: { x: 0, y: 0 }, values: {}, collapsed: false, disabled: false };
+  return { id, type, title: '', position: { x: 0, y: 0 }, values: {}, collapsed: false, disabled: false };
 }
 
 describe('GraphStore', () => {

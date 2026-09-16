@@ -10,13 +10,113 @@ import { PortType, parsePortType, typeKey } from '../types/port-type';
  */
 
 export type WidgetSpec =
-  | { readonly kind: 'text'; readonly placeholder: string; readonly multiline: boolean }
-  | { readonly kind: 'number'; readonly min: number; readonly max: number; readonly step: number; readonly unit: string }
+  | {
+      readonly kind: 'text';
+      readonly placeholder: string;
+      readonly multiline: boolean;
+      /** Preferred height for a multiline field; 0 leaves it to the stylesheet. */
+      readonly rows: number;
+      /** For content whose alignment carries meaning — a schema, a prompt template. */
+      readonly monospace: boolean;
+      /**
+       * Offer a full-window editor beside the field.
+       *
+       * A prompt is a document. Writing one through four rows inside a node on a zoomable canvas
+       * is the usability problem; widening the node until it fits is a worse answer, because it
+       * trades one unreadable thing for an unreadable graph.
+       */
+      readonly editor: boolean;
+      /** Preset node type stocking this field's template list, or '' for none. */
+      readonly library: string;
+      /** Which value inside those presets holds the text. */
+      readonly libraryKey: string;
+    }
+  | {
+      readonly kind: 'number';
+      readonly min: number;
+      readonly max: number;
+      readonly step: number;
+      readonly unit: string;
+      /**
+       * An empty field is a value of its own — "do not send this" — rather than a number the user
+       * has not finished typing. Load-bearing for sampling parameters, where zero and unset are
+       * different requests.
+       */
+      readonly optional: boolean;
+      /** What an empty optional field means, in the user's words — "unset", "no limit". */
+      readonly blankLabel: string;
+    }
   | { readonly kind: 'slider'; readonly min: number; readonly max: number; readonly step: number }
   | { readonly kind: 'toggle' }
-  | { readonly kind: 'dropdown'; readonly options: readonly DropdownOption[] }
+  | {
+      readonly kind: 'dropdown';
+      readonly options: readonly DropdownOption[];
+      /**
+       * Names a catalog the engine serves at runtime — credential names, preset groups — which the
+       * editor merges into `options`. A list that changes while the engine runs cannot live in a
+       * descriptor built once at startup, and hardcoding one here would undo the property that the
+       * frontend knows no node types.
+       */
+      readonly optionsKey: string;
+      /** Lets a value be typed as well as picked, for a list that can never be complete. */
+      readonly allowCustom: boolean;
+      /**
+       * Offer only the options an upstream node says it supports.
+       *
+       * Evaluated in the editor rather than fetched, so a response format the wired model cannot
+       * honour disappears the moment the model changes — with no button to press, and with no
+       * knowledge here of what a model or a response format is.
+       */
+      readonly narrowing: Narrowing | null;
+    }
+  | { readonly kind: 'multiselect'; readonly options: readonly DropdownOption[] }
+  | { readonly kind: 'keyvalue'; readonly keyPlaceholder: string; readonly valuePlaceholder: string }
   | { readonly kind: 'directory' }
-  | { readonly kind: 'file'; readonly extensions: readonly string[] };
+  | { readonly kind: 'file'; readonly extensions: readonly string[] }
+  | { readonly kind: 'filelist'; readonly extensions: readonly string[] }
+  /**
+   * A reference to a named configuration kept on the engine — an endpoint, say — chosen from a
+   * list and edited in a dialog whose fields the engine declares under `schema`. The node stores
+   * the profile's id, never its contents, which is what lets one workflow run against different
+   * servers on different machines.
+   */
+  | { readonly kind: 'profile'; readonly schema: string }
+  /** The name of a secret the engine holds, chosen from the names it knows or added on the spot. */
+  | { readonly kind: 'credential' };
+
+/** "Keep the options named by the list-valued input `listKey` on whatever is wired into `socket`." */
+export interface Narrowing {
+  readonly socket: string;
+  readonly listKey: string;
+  /** Offered whatever the upstream node says — the choices that need no capability. */
+  readonly always: readonly string[];
+}
+
+/** "Only while the sibling setting `key` holds one of `values`." */
+export interface ShowWhen {
+  readonly key: string;
+  readonly values: readonly string[];
+}
+
+/**
+ * A button the node offers before anything is run.
+ *
+ * A `discover` action may hand back values to write into the node; a `check` only lights an
+ * indicator. The editor treats both the same way and knows what neither of them does.
+ */
+export interface NodeActionSpec {
+  readonly key: string;
+  readonly label: string;
+  readonly icon: string;
+  /** The input key this action feeds — where discovered options land — or '' for none. */
+  readonly appliesTo: string;
+  readonly kind: 'check' | 'discover';
+  /**
+   * Run by the editor on its own when `appliesTo` is opened, and again when the upstream wiring
+   * changes, rather than from a button. How a model list arrives without a magnifier to press.
+   */
+  readonly automatic: boolean;
+}
 
 export interface DropdownOption {
   readonly value: string;
@@ -33,6 +133,10 @@ export interface NodeInputSpec {
   readonly widget: WidgetSpec | null;
   readonly defaultValue: unknown;
   readonly hint: string | null;
+  /** Fine tuning: folded into the node's Advanced section rather than shown by default. */
+  readonly advanced: boolean;
+  /** Hidden while it cannot apply; null to always show it. */
+  readonly showWhen: ShowWhen | null;
 }
 
 export interface NodeOutputSpec {
@@ -52,6 +156,7 @@ export interface NodeSpec {
   readonly description: string;
   readonly inputs: readonly NodeInputSpec[];
   readonly outputs: readonly NodeOutputSpec[];
+  readonly actions: readonly NodeActionSpec[];
 }
 
 /** Palette grouping, derived once so the left panel does not regroup on every render. */
@@ -80,12 +185,26 @@ function parseNodeSpec(raw: unknown): NodeSpec {
     icon: String(node['icon'] ?? 'node'),
     accent: String(node['accent'] ?? 'slate'),
     description: String(node['description'] ?? ''),
-    inputs: asArray(node['inputs']).map(parseInput),
+    inputs: asArray(node['inputs']).map(parseInputSpec),
     outputs: asArray(node['outputs']).map(parseOutput),
+    actions: asArray(node['actions']).map(parseAction),
   };
 }
 
-function parseInput(raw: unknown): NodeInputSpec {
+function parseAction(raw: unknown): NodeActionSpec {
+  const action = raw as Record<string, unknown>;
+  return {
+    key: String(action['key']),
+    label: String(action['label'] ?? action['key']),
+    icon: String(action['icon'] ?? 'bolt'),
+    appliesTo: String(action['appliesTo'] ?? ''),
+    kind: action['kind'] === 'discover' ? 'discover' : 'check',
+    automatic: action['automatic'] === true,
+  };
+}
+
+/** One input, as the catalog and a profile schema both serve it. */
+export function parseInputSpec(raw: unknown): NodeInputSpec {
   const input = raw as Record<string, unknown>;
   return {
     key: String(input['key']),
@@ -93,10 +212,101 @@ function parseInput(raw: unknown): NodeInputSpec {
     type: parsePortType(input['type']),
     required: input['required'] === true,
     connectable: input['connectable'] === true,
-    widget: input['widget'] == null ? null : (input['widget'] as WidgetSpec),
+    widget: parseWidget(input['widget']),
     defaultValue: input['default'] ?? null,
     hint: input['hint'] == null ? null : String(input['hint']),
+    advanced: input['advanced'] === true,
+    showWhen: parseShowWhen(input['showWhen']),
   };
+}
+
+function parseShowWhen(raw: unknown): ShowWhen | null {
+  if (raw == null || typeof raw !== 'object') {
+    return null;
+  }
+  const condition = raw as Record<string, unknown>;
+  const values = asArray(condition['values']).map(String);
+  return values.length === 0 ? null : { key: String(condition['key']), values };
+}
+
+/**
+ * Fills in what an older engine may not have sent.
+ *
+ * The catalog is served rather than compiled in, so a frontend can meet a backend that predates a
+ * widget field. Defaulting here — once — is what keeps every template free of `?? false`.
+ */
+function parseWidget(raw: unknown): WidgetSpec | null {
+  if (raw == null || typeof raw !== 'object') {
+    return null;
+  }
+  const widget = raw as Record<string, unknown>;
+  switch (widget['kind']) {
+    case 'text':
+      return {
+        kind: 'text',
+        placeholder: String(widget['placeholder'] ?? ''),
+        multiline: widget['multiline'] === true,
+        rows: Number(widget['rows'] ?? 0),
+        monospace: widget['monospace'] === true,
+        editor: widget['editor'] === true,
+        library: String(widget['library'] ?? ''),
+        libraryKey: String(widget['libraryKey'] ?? ''),
+      };
+    case 'number':
+      return {
+        kind: 'number',
+        min: Number(widget['min'] ?? 0),
+        max: Number(widget['max'] ?? 0),
+        step: Number(widget['step'] ?? 1),
+        unit: String(widget['unit'] ?? ''),
+        optional: widget['optional'] === true,
+        blankLabel: String(widget['blankLabel'] ?? 'unset'),
+      };
+    case 'dropdown':
+      return {
+        kind: 'dropdown',
+        options: parseOptions(widget['options']),
+        optionsKey: String(widget['optionsKey'] ?? ''),
+        allowCustom: widget['allowCustom'] === true,
+        narrowing: parseNarrowing(widget['narrowing']),
+      };
+    case 'multiselect':
+      return { kind: 'multiselect', options: parseOptions(widget['options']) };
+    case 'filelist':
+      return { kind: 'filelist', extensions: asArray(widget['extensions']).map(String) };
+    case 'keyvalue':
+      return {
+        kind: 'keyvalue',
+        keyPlaceholder: String(widget['keyPlaceholder'] ?? 'Key'),
+        valuePlaceholder: String(widget['valuePlaceholder'] ?? 'Value'),
+      };
+    case 'profile':
+      return { kind: 'profile', schema: String(widget['schema'] ?? '') };
+    case 'credential':
+      return { kind: 'credential' };
+    default:
+      return widget as WidgetSpec;
+  }
+}
+
+function parseNarrowing(raw: unknown): Narrowing | null {
+  if (raw == null || typeof raw !== 'object') {
+    return null;
+  }
+  const narrowing = raw as Record<string, unknown>;
+  const socket = String(narrowing['socket'] ?? '');
+  const listKey = String(narrowing['listKey'] ?? '');
+  if (!socket || !listKey) {
+    return null;
+  }
+  return { socket, listKey, always: asArray(narrowing['always']).map(String) };
+}
+
+function parseOptions(raw: unknown): readonly DropdownOption[] {
+  return asArray(raw).map((entry) => {
+    const option = entry as Record<string, unknown>;
+    return { value: String(option['value']), label: String(option['label']) };
+  });
 }
 
 function parseOutput(raw: unknown): NodeOutputSpec {

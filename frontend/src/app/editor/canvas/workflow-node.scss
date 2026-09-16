@@ -123,11 +123,22 @@
   text-overflow: ellipsis;
 }
 
-.head__collapse,
-.head__state {
+.head__collapse {
   display: grid;
   place-items: center;
   width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+// The right-hand bookend: every button the node offers, then the state badge. As wide as it
+// needs to be, and never narrower than the chevron on the left, so the title stays centred.
+.head__state {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 16px;
   height: 16px;
   flex: none;
 }
@@ -191,6 +202,10 @@
   background: var(--node-sunken);
   gap: 4px;
   padding-top: 4px;
+  // Never `overflow: auto` here: any overflow other than visible clips the ports that straddle the
+  // node border, and a body that scrolls carries the output sockets away with it. Height comes
+  // from content; the fold and the conditions are what keep it short.
+  overflow: visible;
 }
 
 .section {
@@ -469,16 +484,19 @@
   position: relative;
 }
 
-// The on/off switch, in the same corner the reference puts it.
+// The on/off switch, in the same corner the reference puts it. Exactly square, no padding, the
+// glyph centred by the grid: the ring and the icon share one centre by construction.
 .foot__power {
   display: grid;
   place-items: center;
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
   flex: none;
   color: var(--text-faint);
   border-radius: 50%;
   border: 1px solid transparent;
+  line-height: 0;
   transition:
     color var(--tempo) var(--ease),
     border-color var(--tempo) var(--ease),
@@ -529,4 +547,265 @@
   gap: 3px;
   margin-left: auto;
   font-variant-numeric: tabular-nums;
+}
+
+
+// --- A user-given name -----------------------------------------------------
+// Italic rather than a different colour: the header already carries the category accent, and a
+// second colour there would compete with it. The tooltip still says what the node type is.
+.head__title--named {
+  font-style: italic;
+}
+
+.head__rename {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 5px;
+  background: var(--node-sunken);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+// --- Streamed output -------------------------------------------------------
+// The answer as it lands. Scrolls from the bottom, because the end is the part being written.
+.section--stream {
+  padding: 6px var(--node-pad);
+  background: var(--node-sunken);
+  border-top: 1px solid var(--border-soft);
+}
+
+.stream {
+  max-height: 132px;
+  overflow-y: auto;
+  // Anchors the view to the newest text without a scroll listener: the column is reversed, so the
+  // browser keeps the bottom pinned as content grows.
+  display: flex;
+  flex-direction: column-reverse;
+  color: var(--text-muted);
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+
+  &.is-live::after {
+    content: '';
+    align-self: flex-start;
+    width: 6px;
+    height: 11px;
+    margin-top: 2px;
+    background: var(--accent-node);
+    animation: caret 1s steps(2, start) infinite;
+  }
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+// --- The advanced fold -----------------------------------------------------
+//
+// Progressive disclosure, declared by the node author rather than guessed here. The header is a
+// full-width row so the whole thing is a target, and it carries a count because a fold whose size
+// is unknown is a fold nobody opens.
+
+.section--advanced {
+  padding: 0;
+  background: transparent;
+}
+
+.advanced__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px var(--node-pad);
+  background: var(--node-body);
+  border: none;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  transition: color var(--tempo) var(--ease), background var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--text);
+    background: var(--node-body-hover, var(--node-body));
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent-node);
+    outline-offset: -2px;
+  }
+}
+
+.advanced__chevron {
+  flex: none;
+  color: var(--text-faint);
+  transform: rotate(-90deg);
+  transition: transform var(--tempo) var(--ease);
+
+  &.is-open {
+    transform: rotate(0deg);
+  }
+}
+
+.advanced__label {
+  flex: 1;
+}
+
+.advanced__count {
+  padding: 0 5px;
+  background: var(--node-sunken);
+  border-radius: 7px;
+  color: var(--text-faint);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+// A setting that has been moved is the one thing a fold must not hide silently.
+.advanced__changed {
+  padding: 0 5px;
+  background: color-mix(in srgb, var(--accent-node) 24%, transparent);
+  border-radius: 7px;
+  color: var(--accent-node);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+}
+
+.advanced__body {
+  background: var(--node-body);
+  padding-bottom: 4px;
+  animation: advanced-in var(--tempo-slow) var(--ease);
+}
+
+@keyframes advanced-in {
+  from {
+    opacity: 0;
+  }
+}
+
+// --- Check indicators ------------------------------------------------------
+//
+// One control, one state, read at a glance: unlit until asked, amber while asking, green or red
+// once it knows. Left-click asks again; right-click opens what it said.
+
+.probe {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: color-mix(in srgb, var(--text) 45%, transparent);
+  transition:
+    color var(--tempo) var(--ease),
+    background var(--tempo) var(--ease),
+    filter var(--tempo) var(--ease);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent-node);
+    outline-offset: -2px;
+  }
+
+  &.is-running {
+    color: var(--warn);
+    animation: probe-pulse 0.9s ease-in-out infinite;
+  }
+
+  &.is-ok {
+    color: var(--ok, #45c17a);
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--ok, #45c17a) 70%, transparent));
+  }
+
+  &.is-failed {
+    color: var(--danger);
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--danger) 70%, transparent));
+  }
+}
+
+@keyframes probe-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+// --- What a check said -----------------------------------------------------
+
+.section--probe {
+  padding: 0;
+  background: transparent;
+}
+
+.probe-result {
+  margin: 0 6px;
+  padding: 6px 8px;
+  background: var(--node-body);
+  border: 1px solid color-mix(in srgb, var(--ok, #45c17a) 45%, transparent);
+  border-radius: var(--radius-sm);
+
+  &.is-bad {
+    border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  }
+}
+
+.probe-result__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--ok, #45c17a);
+
+  .is-bad & {
+    color: var(--danger);
+  }
+}
+
+.probe-result__message {
+  flex: 1;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.probe-result__close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  color: var(--text-faint);
+
+  &:hover {
+    color: var(--text);
+    background: var(--node-sunken);
+  }
+}
+
+.probe-result__line {
+  margin-top: 4px;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.probe-result__applied {
+  margin-top: 5px;
+  padding-left: 18px;
+  color: var(--accent-node);
+  font-size: 10px;
 }

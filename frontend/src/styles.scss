@@ -75,6 +75,10 @@ body {
 button {
   font: inherit;
   color: inherit;
+  // No default padding: every icon-only button in the editor sizes itself to the glyph, and the
+  // browser's 1px 6px would push a 13px icon out of a 15px box — which is exactly where the
+  // off-centre power switch and test bulb came from.
+  padding: 0;
   border: none;
   background: none;
   cursor: pointer;

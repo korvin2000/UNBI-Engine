@@ -14,7 +14,18 @@ const ANY: PortType = { kind: 'any' };
 const TEXT_LIST: PortType = { kind: 'list', element: TEXT };
 
 function input(key: string, type: PortType, connectable = true): NodeInputSpec {
-  return { key, label: key, type, required: false, connectable, widget: null, defaultValue: null, hint: null };
+  return {
+    key,
+    label: key,
+    type,
+    required: false,
+    connectable,
+    widget: null,
+    defaultValue: null,
+    hint: null,
+    advanced: false,
+    showWhen: null,
+  };
 }
 
 function output(key: string, type: PortType): NodeOutputSpec {
@@ -32,6 +43,7 @@ function spec(id: string, inputs: NodeInputSpec[], outputs: NodeOutputSpec[]): N
     description: '',
     inputs,
     outputs,
+    actions: [],
   };
 }
 

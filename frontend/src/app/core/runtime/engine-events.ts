@@ -44,6 +44,20 @@ export type EngineEvent =
       readonly at: string;
     }
   | {
+      /**
+       * Text a node has produced so far, before it finishes.
+       *
+       * Separate from `node.log` because the two are folded differently: logs are lines to keep, a
+       * stream is one growing value to append to.
+       */
+      readonly type: 'node.stream';
+      readonly runId: string;
+      readonly nodeId: string;
+      readonly portKey: string;
+      readonly chunk: string;
+      readonly at: string;
+    }
+  | {
       readonly type: 'run.finished';
       readonly runId: string;
       readonly outcome: RunOutcome;

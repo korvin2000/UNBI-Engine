@@ -4,6 +4,9 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 import { CategoryGroup, NodeSpec, groupIntoCategories } from '../../core/catalog/catalog.models';
 import * as commands from '../../core/graph/commands';
 import { GraphStore } from '../../core/graph/graph-store';
+import { newNode } from '../../core/graph/workflow.models';
+import { Preset, PresetService } from '../../core/presets/preset.service';
+import { PRESET_PREFIX } from '../canvas/flow-canvas';
 import { Icon } from '../../shared/icon';
 
 /**
@@ -26,7 +29,9 @@ import { Icon } from '../../shared/icon';
 export class NodePalette {
   private readonly catalog = inject(CatalogService);
   private readonly graph = inject(GraphStore);
+  private readonly presets = inject(PresetService);
 
+  protected readonly tab = signal<'nodes' | 'presets'>('nodes');
   protected readonly query = signal('');
   protected readonly collapsed = signal<ReadonlySet<string>>(new Set());
 
@@ -54,6 +59,102 @@ export class NodePalette {
 
   protected readonly isSearching = computed(() => this.query().trim().length > 0);
 
+  protected readonly presetPrefix = PRESET_PREFIX;
+  protected readonly presetError = this.presets.error;
+
+  /**
+   * The preset whose delete button is armed, if any.
+   *
+   * Deleting one removes a file from the engine's disk and no undo reaches it, so the button asks
+   * once. Held here rather than in the row so that arming a second row disarms the first — two
+   * rows both showing "Delete" is how the wrong one gets pressed.
+   */
+  protected readonly confirming = signal<string | null>(null);
+
+  /**
+   * Saved configurations, searched the same way nodes are and grouped by their own group.
+   *
+   * Ungrouped presets come last under a neutral heading rather than being hidden: a preset saved in
+   * a hurry, with no group, is still one somebody wants to find again.
+   */
+  protected readonly presetGroups = computed(() => {
+    const needle = this.query().trim().toLowerCase();
+    const matching = this.presets.all().filter(
+      (preset) =>
+        !needle ||
+        `${preset.name} ${preset.group} ${preset.description} ${preset.label}`
+          .toLowerCase()
+          .includes(needle),
+    );
+
+    const byGroup = new Map<string, Preset[]>();
+    for (const preset of matching) {
+      const key = preset.group || 'Ungrouped';
+      const bucket = byGroup.get(key) ?? [];
+      bucket.push(preset);
+      byGroup.set(key, bucket);
+    }
+    return [...byGroup.entries()]
+      .sort(([a], [b]) => (a === 'Ungrouped' ? 1 : b === 'Ungrouped' ? -1 : a.localeCompare(b)))
+      .map(([name, entries]) => ({ name, entries }));
+  });
+
+  protected readonly presetCount = computed(() =>
+    this.presetGroups().reduce((total, group) => total + group.entries.length, 0),
+  );
+
+  /** Every saved preset, not just the ones matching a search — the tab badge counts what exists. */
+  protected readonly presetTotal = computed(() => this.presets.all().length);
+
+  protected showTab(tab: 'nodes' | 'presets'): void {
+    this.tab.set(tab);
+    this.confirming.set(null);
+    if (tab === 'presets') {
+      // Re-read on every visit: a preset may have been added by another editor, or by dropping a
+      // file into the engine's data directory.
+      this.presets.load();
+    }
+  }
+
+  /** Adds a preset's node, already configured, with the preset's name on it. */
+  protected addPreset(preset: Preset): void {
+    if (!this.catalog.byId().has(preset.nodeType)) {
+      return;
+    }
+    this.graph.dispatch(
+      commands.addNode(
+        newNode(preset.nodeType, this.defaultPosition(), { ...preset.values }, preset.name),
+        preset.name,
+      ),
+    );
+  }
+
+  protected askDelete(preset: Preset): void {
+    this.confirming.set(preset.id);
+  }
+
+  protected cancelDelete(): void {
+    this.confirming.set(null);
+  }
+
+  protected deletePreset(preset: Preset): void {
+    this.confirming.set(null);
+    this.presets.delete(preset.id);
+  }
+
+  /** The tooltip for a preset row: what it is for, then what it configures. */
+  protected describe(preset: Preset): string {
+    const what = this.isOrphan(preset)
+      ? `${preset.nodeType} — this engine no longer serves that node type`
+      : preset.label;
+    return preset.description ? `${preset.description}\n${what}` : what;
+  }
+
+  /** True for a preset whose node type this engine no longer serves. */
+  protected isOrphan(preset: Preset): boolean {
+    return !this.catalog.byId().has(preset.nodeType);
+  }
+
   protected isCollapsed(category: string): boolean {
     // Searching expands everything: hiding a match behind a collapsed header makes search look broken.
     return !this.isSearching() && this.collapsed().has(category);
@@ -71,6 +172,8 @@ export class NodePalette {
 
   protected onSearch(event: Event): void {
     this.query.set((event.target as HTMLInputElement).value);
+    // A row that scrolls out from under an armed button is a row that gets deleted by accident.
+    this.confirming.set(null);
   }
 
   protected clearSearch(): void {
@@ -88,15 +191,18 @@ export class NodePalette {
    * existing bounding box keeps a fast-built graph legible without a layout engine.
    */
   protected addAtDefaultPosition(spec: NodeSpec): void {
-    const nodes = this.graph.doc().nodes;
-    const rightmost = nodes.reduce((max, node) => Math.max(max, node.position.x), 0);
-    const position = nodes.length === 0 ? { x: 120, y: 120 } : { x: rightmost + 300, y: 120 + (nodes.length % 4) * 60 };
+    const position = this.defaultPosition();
 
     this.graph.dispatch(
-      commands.addNode(
-        { id: crypto.randomUUID(), type: spec.id, position, values: {}, collapsed: false, disabled: false },
-        spec.label,
-      ),
+      commands.addNode(newNode(spec.id, position), spec.label),
     );
+  }
+
+  private defaultPosition(): { x: number; y: number } {
+    const nodes = this.graph.doc().nodes;
+    const rightmost = nodes.reduce((max, node) => Math.max(max, node.position.x), 0);
+    return nodes.length === 0
+      ? { x: 120, y: 120 }
+      : { x: rightmost + 300, y: 120 + (nodes.length % 4) * 60 };
   }
 }
