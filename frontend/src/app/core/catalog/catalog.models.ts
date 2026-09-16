@@ -82,7 +82,28 @@ export type WidgetSpec =
    */
   | { readonly kind: 'profile'; readonly schema: string }
   /** The name of a secret the engine holds, chosen from the names it knows or added on the spot. */
-  | { readonly kind: 'credential' };
+  | { readonly kind: 'credential' }
+  /**
+   * A readout rather than a control: what a run produced, shown in the node.
+   *
+   * Parsed here because the row model has to know that such a row is not editable — a reset button
+   * must never write to one, and it can never be "changed". Drawing it is a separate job.
+   */
+  | {
+      readonly kind: 'display';
+      readonly style: 'line' | 'block' | 'chips';
+      readonly unit: string;
+    }
+  /**
+   * A kind this build has never heard of, kept rather than dropped.
+   *
+   * The catalog is served by another process, so a node pack can name a control this editor does
+   * not have. Silently rendering nothing would make a setting that exists look like a setting that
+   * does not — the node would simply be missing a field, with no hint that anything was wrong. So
+   * the unknown name is carried through to a visible placeholder, and the parser says so once on
+   * the console.
+   */
+  | { readonly kind: 'unsupported'; readonly declared: string };
 
 /** "Keep the options named by the list-valued input `listKey` on whatever is wired into `socket`." */
 export interface Narrowing {
@@ -135,6 +156,13 @@ export interface NodeInputSpec {
   readonly hint: string | null;
   /** Fine tuning: folded into the node's Advanced section rather than shown by default. */
   readonly advanced: boolean;
+  /**
+   * The sub-section this setting belongs to, or '' for none.
+   *
+   * A name rather than a number, and declared by the node author: twenty sampling knobs in one
+   * list is a list nobody reads, and the editor has no way to guess which of them belong together.
+   */
+  readonly group: string;
   /** Hidden while it cannot apply; null to always show it. */
   readonly showWhen: ShowWhen | null;
 }
@@ -216,6 +244,7 @@ export function parseInputSpec(raw: unknown): NodeInputSpec {
     defaultValue: input['default'] ?? null,
     hint: input['hint'] == null ? null : String(input['hint']),
     advanced: input['advanced'] === true,
+    group: String(input['group'] ?? ''),
     showWhen: parseShowWhen(input['showWhen']),
   };
 }
@@ -270,8 +299,21 @@ function parseWidget(raw: unknown): WidgetSpec | null {
         allowCustom: widget['allowCustom'] === true,
         narrowing: parseNarrowing(widget['narrowing']),
       };
+    case 'slider':
+      return {
+        kind: 'slider',
+        min: Number(widget['min'] ?? 0),
+        max: Number(widget['max'] ?? 0),
+        step: Number(widget['step'] ?? 1),
+      };
+    case 'toggle':
+      return { kind: 'toggle' };
     case 'multiselect':
       return { kind: 'multiselect', options: parseOptions(widget['options']) };
+    case 'directory':
+      return { kind: 'directory' };
+    case 'file':
+      return { kind: 'file', extensions: asArray(widget['extensions']).map(String) };
     case 'filelist':
       return { kind: 'filelist', extensions: asArray(widget['extensions']).map(String) };
     case 'keyvalue':
@@ -284,9 +326,24 @@ function parseWidget(raw: unknown): WidgetSpec | null {
       return { kind: 'profile', schema: String(widget['schema'] ?? '') };
     case 'credential':
       return { kind: 'credential' };
-    default:
-      return widget as WidgetSpec;
+    case 'display':
+      return {
+        kind: 'display',
+        style: displayStyle(widget['style']),
+        unit: String(widget['unit'] ?? ''),
+      };
+    default: {
+      // Loudly, once, and then visibly in the node: a kind this build cannot draw is a setting the
+      // user cannot reach, and the one thing it must not do is look like an absence.
+      const declared = String(widget['kind'] ?? '');
+      console.warn(`[catalog] unsupported widget kind: ${declared || '(none)'}`);
+      return { kind: 'unsupported', declared };
+    }
   }
+}
+
+function displayStyle(raw: unknown): 'line' | 'block' | 'chips' {
+  return raw === 'block' || raw === 'chips' ? raw : 'line';
 }
 
 function parseNarrowing(raw: unknown): Narrowing | null {

@@ -260,6 +260,13 @@
       opacity: 0.32;
       cursor: not-allowed;
     }
+
+    // A toggle that is on says so on the button itself: the panel it controls can be off screen
+    // on a narrow window, so the pressed state is the only thing that answers "is it showing?".
+    &.is-on {
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
   }
 }
 

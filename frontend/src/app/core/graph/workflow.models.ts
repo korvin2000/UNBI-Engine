@@ -28,6 +28,16 @@ export interface WorkflowNode {
   readonly values: Readonly<Record<string, unknown>>;
   readonly collapsed: boolean;
   /**
+   * How wide this instance is drawn, in canvas pixels; absent means the default width.
+   *
+   * Per node rather than per node type, and part of the document rather than a view preference: a
+   * node holding a JSON schema or a table of discovered facts needs the room, the four beside it do
+   * not, and which of them was widened is something the author decided and a reader of the saved
+   * file should get back. Absent rather than 252 when untouched, so the default can move without
+   * rewriting every file that never expressed an opinion.
+   */
+  readonly width?: number;
+  /**
    * Switched off from the node footer: kept on the canvas and in the saved file, but left out of
    * the run. Everything downstream of it goes too — see {@link excludedFromRun}.
    */
@@ -48,6 +58,27 @@ export interface Point {
 }
 
 export const EMPTY_DOC: WorkflowDoc = { nodes: [], edges: [] };
+
+/**
+ * What a node may be resized to.
+ *
+ * The minimum is the default width from `--node-width`: narrower than that a dropdown's label and
+ * its chevron start colliding, and the point of the grip is to make room, not to take it away. The
+ * maximum is where a node stops being a node — past roughly two and a half default widths the graph
+ * reads as a stack of documents, and a prompt that long belongs in the full-window editor.
+ *
+ * The step is what the grip rounds to, so two nodes dragged to "about the same" end up identical
+ * rather than four pixels apart.
+ */
+export const MIN_NODE_WIDTH = 252;
+export const MAX_NODE_WIDTH = 640;
+export const DEFAULT_NODE_WIDTH = 252;
+export const NODE_WIDTH_STEP = 8;
+
+/** A width the canvas can actually draw: a whole number of pixels, inside the bounds. */
+export function clampNodeWidth(width: number): number {
+  return Math.round(Math.min(Math.max(width, MIN_NODE_WIDTH), MAX_NODE_WIDTH));
+}
 
 /**
  * A fresh node instance.

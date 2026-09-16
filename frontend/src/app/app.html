@@ -8,6 +8,14 @@
   <main class="workspace__canvas">
     <app-flow-canvas />
   </main>
+
+  <!--
+    The inspector sits after the canvas so that docking it is a flex column the canvas gives way
+    to, and floating it is an absolute card over the canvas rather than under it. Mounted here
+    rather than inside the canvas for the same reason the dialogs are: inside `f-flow` it would
+    live in the transformed, clipped layer and be scaled by the zoom.
+  -->
+  <app-node-inspector />
 </div>
 
 <!--

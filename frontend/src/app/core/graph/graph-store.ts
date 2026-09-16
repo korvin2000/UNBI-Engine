@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { CatalogService } from '../catalog/catalog.service';
 import { NodeSpec } from '../catalog/catalog.models';
+import { isReadout } from '../catalog/node-rows';
 import { assignable, explainRejection } from '../types/assignability';
 import { Command, documentsMatch } from './commands';
 import { EMPTY_DOC, WorkflowDoc, WorkflowNode, excludedFromRun } from './workflow.models';
@@ -92,7 +93,10 @@ export class GraphStore {
         continue;
       }
       for (const input of spec.inputs) {
-        if (!input.required) {
+        // A readout is not something the user can supply: it is filled in by a fetch, and a
+        // required one before anybody pressed the bulb would report the node as broken for having
+        // nothing to show yet — an error about the one thing on the node nobody can act on.
+        if (!input.required || isReadout(input)) {
           continue;
         }
         const wired = doc.edges.some(

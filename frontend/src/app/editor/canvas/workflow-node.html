@@ -145,8 +145,80 @@
           }
         </div>
       }
+      @case ('inline') {
+        <!--
+          Label left, control right, one line. A number's control is 60px of the 228 available, so
+          the line above it was empty — and five sampling numbers cost five lines for nothing. The
+          port is anchored to the control's line and still sits on the node border; see the
+          stylesheet for how, because the label column moves the control's left edge inward.
+        -->
+        <div class="inline">
+          <span class="inline__label">
+            <span class="inline__text">{{ row.spec.label }}</span>
+            @if (row.spec.hint) {
+              <app-icon class="line__hint" name="help" [size]="11" [attr.title]="row.spec.hint" />
+            }
+            @if (row.wired) {
+              <span class="row__driven" title="Driven by the connected edge">wired</span>
+            }
+          </span>
+          <div class="control control--inline">
+            @if (row.spec.connectable) {
+              <div
+                class="port port--in"
+                [class]="row.portClass"
+                fConnector
+                fConnectorType="target"
+                fConnectorConnectableSide="left"
+                [fConnectorId]="row.connectorId"
+                [fConnectorCategory]="row.typeKey"
+                [fConnectorSelfConnectable]="false"
+                [attr.title]="row.portTitle"
+                [attr.aria-label]="row.portTitle"
+              ></div>
+            }
+            <app-node-widget
+              [spec]="row.spec.widget!"
+              [value]="row.value"
+              [disabled]="row.widgetDisabled"
+              [label]="row.spec.label"
+              (valueChange)="setValue(row.spec.key, $event)"
+            />
+          </div>
+        </div>
+      }
+      @case ('display') {
+        <!--
+          A readout, not a control: what a run or a fetch produced. No label above it — the widget
+          draws the name and the value as one two-column line, because a fact reads as "Context
+          Window … 128k" and a caption above a value would double the height of a node that is
+          twenty facts long.
+        -->
+        <div class="control control--readout">
+          @if (row.spec.connectable) {
+            <div
+              class="port port--in"
+              [class]="row.portClass"
+              fConnector
+              fConnectorType="target"
+              fConnectorConnectableSide="left"
+              [fConnectorId]="row.connectorId"
+              [fConnectorCategory]="row.typeKey"
+              [fConnectorSelfConnectable]="false"
+              [attr.title]="row.portTitle"
+              [attr.aria-label]="row.portTitle"
+            ></div>
+          }
+          <app-node-widget
+            [spec]="row.spec.widget!"
+            [value]="row.value"
+            [label]="row.spec.label"
+            [hint]="row.spec.hint ?? ''"
+          />
+        </div>
+      }
       @default {
-        <!-- A field: its label is centred above the control, as in the reference UI. -->
+        <!-- A field: its label sits above the control, left-aligned so a column of them reads. -->
         <div class="row__label">
           {{ row.spec.label }}
           @if (row.spec.hint) {
@@ -209,33 +281,65 @@
         that hides a setting somebody moved is a fold that hides why a run behaves oddly.
       -->
       <section class="section section--advanced">
-        <button
-          class="advanced__head"
-          type="button"
-          [attr.aria-expanded]="advancedOpen()"
-          (click)="toggleAdvanced()"
-          fDragBlocker
-        >
-          <app-icon
-            class="advanced__chevron"
-            [class.is-open]="advancedOpen()"
-            name="chevron"
-            [size]="11"
-          />
-          <span class="advanced__label">Advanced</span>
-          @if (advancedSummary().changed > 0) {
-            <span class="advanced__changed" title="Settings here are no longer at their default">
-              {{ advancedSummary().changed }} changed
-            </span>
-          } @else {
-            <span class="advanced__count">{{ advancedSummary().total }}</span>
-          }
-        </button>
+        <!--
+          Two targets in one strip, because there are two different things to want: the chevron
+          folds the settings out here, and the label opens the inspector panel — which is where
+          twenty of them are actually workable. The strip is a div rather than a button so that
+          neither is nested inside the other.
+        -->
+        <div class="advanced__head" [class.is-active]="inspecting()" fDragBlocker>
+          <button
+            class="advanced__fold"
+            type="button"
+            [attr.aria-expanded]="advancedOpen()"
+            [attr.title]="advancedOpen() ? 'Fold these away' : 'Show the fine tuning here in the node'"
+            aria-label="Toggle the advanced settings"
+            (click)="toggleAdvanced()"
+          >
+            <app-icon
+              class="advanced__chevron"
+              [class.is-open]="advancedOpen()"
+              name="chevron"
+              [size]="11"
+            />
+          </button>
+          <button
+            class="advanced__open"
+            type="button"
+            [attr.aria-pressed]="inspecting()"
+            title="Open these settings in the panel beside the canvas"
+            (click)="openInspector()"
+          >
+            <span class="advanced__label">Advanced</span>
+            @if (advancedSummary().changed > 0) {
+              <span class="advanced__changed" title="Settings here are no longer at their default">
+                {{ advancedSummary().changed }} changed
+              </span>
+            } @else {
+              <span class="advanced__count">{{ advancedSummary().total }}</span>
+            }
+            <app-icon class="advanced__panel" name="sliders" [size]="11" />
+          </button>
+        </div>
 
         @if (advancedOpen()) {
           <div class="advanced__body">
             @for (row of advancedRows(); track row.spec.key) {
               <ng-container *ngTemplateOutlet="rowTemplate; context: { $implicit: row }" />
+            }
+          </div>
+        } @else if (changedChips().length > 0) {
+          <!--
+            What the fold is hiding, in one wrapped line. A count says something was changed; this
+            says what — which is the difference between a graph you have to open to understand and
+            one that reads at a glance a month later.
+          -->
+          <div class="advanced__chips" aria-hidden="true">
+            @for (chip of changedChips(); track chip.key) {
+              <span class="chip chip--summary" [attr.title]="chip.label">
+                <span class="chip__label">{{ chip.label }}:</span>
+                <span class="chip__value">{{ chip.value }}</span>
+              </span>
             }
           </div>
         }
@@ -412,4 +516,29 @@
       {{ elapsed }}
     </span>
   }
+
+  <!-- The number being chosen, while it is being chosen. Only during the drag: a permanent width
+       readout on every node would be a measurement nobody asked for. -->
+  @if (widthLabel()) {
+    <span class="foot__width">{{ widthLabel() }}</span>
+  }
+
+  <!--
+    The width grip, in the footer's bottom-right corner rather than down the node's right edge: the
+    output ports are 14px circles centred *on* that edge, and a full-height grip would cover every
+    one of them. `fDragBlocker` keeps the flow library out of the gesture — the component selects
+    the node itself — and it is hidden from assistive tech because a pointer drag is not the
+    accessible route to a width: the inspector's number field is.
+  -->
+  <span
+    class="grip"
+    tabindex="-1"
+    aria-hidden="true"
+    title="Drag to set this node's width — double-click for the default"
+    fDragBlocker
+    (pointerdown)="startResize($event)"
+    (dblclick)="resetWidth($event)"
+  >
+    <app-icon name="grip" [size]="9" [weight]="1.6" />
+  </span>
 </footer>

@@ -97,6 +97,10 @@
   <div class="menu-backdrop" (pointerdown)="closeMenu()" (contextmenu)="$event.preventDefault(); closeMenu()"></div>
   <div class="menu" role="menu" [style.left.px]="open.x" [style.top.px]="open.y">
     @if (open.nodeId) {
+      <button type="button" role="menuitem" (click)="runMenu('settings')">
+        <app-icon name="sliders" [size]="14" />
+        <span>Settings…</span>
+      </button>
       <button type="button" role="menuitem" (click)="runMenu('rename')">
         <app-icon name="tag" [size]="14" />
         <span>Rename…</span>
@@ -119,6 +123,14 @@
         Duplicate
         <span class="menu__key">Ctrl D</span>
       </button>
+      @if (open.resized) {
+        <!-- Only when there is a width to put back. An always-present entry that does nothing on
+             most nodes is a menu that has to be read rather than scanned. -->
+        <button type="button" role="menuitem" (click)="runMenu('reset-width')">
+          <app-icon name="grip" [size]="13" />
+          Reset width
+        </button>
+      }
       <button type="button" role="menuitem" (click)="runMenu('disconnect')">
         <app-icon name="close" [size]="13" />
         Disconnect

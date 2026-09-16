@@ -17,10 +17,19 @@
     </header>
 
     <div class="toolbar">
-      <button class="tool" type="button" (click)="loadFile()" title="Replace the text with a file's contents">
-        <app-icon name="open" [size]="13" />
-        Load from file
-      </button>
+      @if (!readOnly()) {
+        <button class="tool" type="button" (click)="loadFile()" title="Replace the text with a file's contents">
+          <app-icon name="open" [size]="13" />
+          Load from file
+        </button>
+      } @else {
+        <!-- A viewer says so: the dialog otherwise looks exactly like the one that writes, and a
+             field that silently ignores typing is worse than one that explains itself. -->
+        <span class="tool tool--static" title="This value was published by the gateway, not set here">
+          <app-icon name="eye" [size]="13" />
+          Read-only
+        </span>
+      }
 
       @if (hasLibrary()) {
         <button
@@ -116,6 +125,7 @@
       [class.editor--mono]="editing.monospace"
       spellcheck="false"
       autofocus
+      [readOnly]="readOnly()"
       [attr.placeholder]="editing.placeholder"
       [value]="draft()"
       (input)="onInput($event)"
@@ -128,9 +138,14 @@
     }
 
     <footer class="dialog__foot">
-      <span class="dialog__hint">Ctrl+Enter applies · Esc discards</span>
-      <button class="button" type="button" (click)="cancel()">Cancel</button>
-      <button class="button button--primary" type="button" (click)="save()">Apply</button>
+      @if (readOnly()) {
+        <span class="dialog__hint">Select to copy · Esc closes</span>
+        <button class="button button--primary" type="button" (click)="cancel()">Close</button>
+      } @else {
+        <span class="dialog__hint">Ctrl+Enter applies · Esc discards</span>
+        <button class="button" type="button" (click)="cancel()">Cancel</button>
+        <button class="button button--primary" type="button" (click)="save()">Apply</button>
+      }
     </footer>
   </div>
 }

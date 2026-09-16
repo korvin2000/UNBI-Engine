@@ -44,6 +44,7 @@ const SINK: NodeSpec = {
       defaultValue: null,
       hint: null,
       advanced: false,
+      group: '',
       showWhen: null,
     },
     {
@@ -56,6 +57,7 @@ const SINK: NodeSpec = {
       defaultValue: 1,
       hint: null,
       advanced: false,
+      group: '',
       showWhen: null,
     },
   ],
@@ -63,9 +65,49 @@ const SINK: NodeSpec = {
   actions: [],
 };
 
+/**
+ * A node whose only input is a readout — what the two LLM info nodes are.
+ *
+ * Its readout is declared `required` on purpose. The engine does mark a fact it always publishes as
+ * required, and the required-value check must not read that as "the user has to type something
+ * here": before anyone presses the bulb there is nothing in it, and reporting that would put a red
+ * warning on a node whose one job is to be empty until it is asked.
+ */
+const INFO: NodeSpec = {
+  id: 'test.info',
+  label: 'Info',
+  category: 'Test',
+  subcategory: '',
+  icon: 'table',
+  accent: 'violet',
+  description: '',
+  inputs: [
+    {
+      key: 'fetchedAt',
+      label: 'Fetched',
+      type: TEXT,
+      required: true,
+      connectable: false,
+      widget: { kind: 'display', style: 'line', unit: '' },
+      defaultValue: '',
+      hint: null,
+      advanced: false,
+      group: '',
+      showWhen: null,
+    },
+  ],
+  outputs: [],
+  actions: [],
+};
+
 /** A catalog stub — the store only ever reads `byId`. */
 class StubCatalog {
-  readonly byId = () => new Map<string, NodeSpec>([[SOURCE.id, SOURCE], [SINK.id, SINK]]);
+  readonly byId = () =>
+    new Map<string, NodeSpec>([
+      [SOURCE.id, SOURCE],
+      [SINK.id, SINK],
+      [INFO.id, INFO],
+    ]);
 }
 
 function node(id: string, type: string): WorkflowNode {
@@ -203,6 +245,63 @@ describe('GraphStore', () => {
     });
   });
 
+  /**
+   * Resizing, which is a document change like any other.
+   *
+   * The two things worth pinning down are that a whole selection resizes in *one* history step —
+   * lining up four nodes should take one press of undo, not four — and that "back to the default"
+   * removes the key rather than writing 252, so the default can move later without rewriting every
+   * file that never expressed an opinion.
+   */
+  describe('width', () => {
+    beforeEach(() => {
+      store.dispatch(commands.addNode(node('a', 'test.source'), 'Source'));
+      store.dispatch(commands.addNode(node('b', 'test.source'), 'Source'));
+    });
+
+    it('resizes a whole selection in one undoable step', () => {
+      store.dispatch(commands.resizeNodes(['a', 'b'], 400));
+
+      expect(store.node('a')?.width).toBe(400);
+      expect(store.node('b')?.width).toBe(400);
+      expect(store.lastAction()).toBe('Resize 2 nodes');
+
+      store.undo();
+      expect(store.node('a')?.width).toBeUndefined();
+      expect(store.node('b')?.width).toBeUndefined();
+    });
+
+    it('clamps a width the canvas could not draw', () => {
+      store.dispatch(commands.resizeNodes(['a'], 4000));
+      expect(store.node('a')?.width).toBe(640);
+
+      store.dispatch(commands.resizeNodes(['a'], 10));
+      expect(store.node('a')?.width).toBe(252);
+    });
+
+    it('removes the width entirely on a reset, rather than storing the default', () => {
+      store.dispatch(commands.resizeNodes(['a'], 400));
+      store.dispatch(commands.resizeNodes(['a'], undefined));
+
+      const reset = store.node('a')!;
+      expect(reset.width).toBeUndefined();
+      expect('width' in reset).toBe(false);
+      expect(store.lastAction()).toBe('Resize node');
+    });
+
+    it('records nothing for a drag that ended where it started', () => {
+      store.dispatch(commands.resizeNodes(['a'], 400));
+      const depth = store.lastAction();
+
+      store.dispatch(commands.resizeNodes(['a'], 400));
+      store.undo();
+
+      // One undo went back past the resize entirely: the second dispatch was never recorded.
+      expect(store.node('a')?.width).toBeUndefined();
+      expect(depth).toBe('Resize node');
+    });
+  });
+
   describe('validation', () => {
     it('accepts a well-formed graph', () => {
       store.dispatch(commands.addNode(node('a', 'test.source'), 'Source'));
@@ -251,6 +350,13 @@ describe('GraphStore', () => {
 
       expect(store.runnableCount()).toBe(0);
       expect(store.isRunnable()).toBe(false);
+    });
+
+    it('never asks for a value for a readout, even a required one', () => {
+      store.dispatch(commands.addNode(node('i', 'test.info'), 'Info'));
+
+      expect(store.issues()).toHaveLength(0);
+      expect(store.isRunnable()).toBe(true);
     });
 
     it('detects a cycle and names the nodes in it', () => {

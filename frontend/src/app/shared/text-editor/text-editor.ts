@@ -74,7 +74,10 @@ export class TextEditor {
       );
   });
 
-  protected readonly hasLibrary = computed(() => !!this.request()?.library);
+  /** A viewer rather than an editor: everything that would write is left out. */
+  protected readonly readOnly = computed(() => this.request()?.readOnly === true);
+
+  protected readonly hasLibrary = computed(() => !!this.request()?.library && !this.readOnly());
   protected readonly canSaveTemplate = computed(() => this.templateName().trim().length > 0);
 
   constructor() {
@@ -97,7 +100,12 @@ export class TextEditor {
     this.draft.set((event.target as HTMLTextAreaElement).value);
   }
 
+  /** Commits the text. Refused outright in a viewer, so Ctrl+Enter cannot write back a readout. */
   protected save(): void {
+    if (this.readOnly()) {
+      this.cancel();
+      return;
+    }
     this.editor.commit(this.draft());
   }
 

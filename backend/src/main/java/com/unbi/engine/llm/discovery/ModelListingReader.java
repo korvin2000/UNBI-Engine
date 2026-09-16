@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import tools.jackson.databind.JsonNode;
 
@@ -50,6 +51,81 @@ public final class ModelListingReader {
         }
         models.sort((a, b) -> a.id().compareToIgnoreCase(b.id()));
         return List.copyOf(models);
+    }
+
+    /**
+     * How many models this listing says are served.
+     *
+     * <p>{@code total_count} first, because a paged listing's {@code data} is one page: OpenRouter
+     * now answers {@code {data:[…], total_count, links:{next}}}, and counting the array would report
+     * a page size as a catalogue size the moment that {@code next} link starts being used.
+     */
+    public static int count(JsonNode body) {
+        if (body == null) {
+            return 0;
+        }
+        var total = body.path("total_count");
+        if (total.isNumber() && total.asInt(0) > 0) {
+            return total.asInt(0);
+        }
+        var data = body.path("data");
+        return data.isArray() ? data.size() : 0;
+    }
+
+    /** One entry of a listing, by id, as the gateway wrote it. */
+    public static Optional<JsonNode> entry(JsonNode body, String id) {
+        if (body == null || id == null || id.isBlank()) {
+            return Optional.empty();
+        }
+        var data = body.path("data");
+        if (!data.isArray()) {
+            return Optional.empty();
+        }
+        for (var entry : data) {
+            if (firstText(entry, "id", "name", "model").equalsIgnoreCase(id.trim())) {
+                return Optional.of(entry);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** What this engine concludes about a single entry, without wrapping it back into a listing. */
+    public static Optional<DiscoveredModel> single(JsonNode entry) {
+        if (entry == null) {
+            return Optional.empty();
+        }
+        var id = firstText(entry, "id", "name", "model");
+        return id.isBlank() ? Optional.empty() : Optional.of(one(entry, id));
+    }
+
+    /** Every input modality any model in this listing accepts, in the gateway's own words. */
+    public static List<String> inputModalities(JsonNode body) {
+        var found = new java.util.TreeSet<String>();
+        var data = body == null ? null : body.path("data");
+        if (data != null && data.isArray()) {
+            for (var entry : data) {
+                found.addAll(textSet(entry.path("architecture").path("input_modalities")));
+                found.addAll(textSet(entry.path("input_modalities")));
+            }
+        }
+        return List.copyOf(found);
+    }
+
+    /** Input modalities of one entry, in the order the gateway listed them. */
+    public static List<String> inputModalitiesOf(JsonNode entry) {
+        var found = new LinkedHashSet<String>(textSet(entry.path("architecture").path("input_modalities")));
+        found.addAll(textSet(entry.path("input_modalities")));
+        return List.copyOf(found);
+    }
+
+    /** Output modalities of one entry. Usually just {@code text}, and occasionally not. */
+    public static List<String> outputModalitiesOf(JsonNode entry) {
+        return List.copyOf(textSet(entry.path("architecture").path("output_modalities")));
+    }
+
+    /** The parameters one entry says it accepts, in the order the gateway listed them. */
+    public static List<String> supportedParametersOf(JsonNode entry) {
+        return List.copyOf(textSet(entry.path("supported_parameters")));
     }
 
     private static DiscoveredModel one(JsonNode entry, String id) {
@@ -220,15 +296,7 @@ public final class ModelListingReader {
 
     /** Gateways quote per-token prices, often as decimal strings. This engine quotes per million. */
     private static Double perMillion(JsonNode node) {
-        if (node == null || node.isMissingNode() || node.isNull()) {
-            return null;
-        }
-        try {
-            var perToken = node.isNumber() ? node.asDouble() : Double.parseDouble(node.asString("").trim());
-            return perToken < 0 ? null : perToken * 1_000_000d;
-        } catch (NumberFormatException | NullPointerException notANumber) {
-            return null;
-        }
+        return Amounts.perMillion(node);
     }
 
     private static Integer positive(JsonNode node) {

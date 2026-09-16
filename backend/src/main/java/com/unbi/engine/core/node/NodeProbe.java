@@ -66,6 +66,18 @@ public interface NodeProbe {
             return !nodeType.isBlank();
         }
 
+        /**
+         * One setting of the upstream node, as text — mirroring {@link Request#text}.
+         *
+         * <p>Here because the question a probe asks is often two hops up: "which model?" is a value
+         * on the Model node, read by a node wired downstream of it. Without this, every such probe
+         * reaches into {@code values()} and re-implements the null handling.
+         */
+        public String text(String key) {
+            var value = values.get(key);
+            return value == null ? "" : String.valueOf(value);
+        }
+
         public Source source(String socket) {
             return sources.getOrDefault(socket, NONE);
         }

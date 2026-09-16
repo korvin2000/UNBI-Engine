@@ -1,0 +1,480 @@
+{
+  "data": [
+    {
+      "id": "qwen/qwen3.5-35b-a3b",
+      "canonical_slug": "qwen/qwen3.5-35b-a3b-20260224",
+      "hugging_face_id": "Qwen/Qwen3.5-35B-A3B",
+      "name": "Qwen: Qwen3.5-35B-A3B",
+      "created": 1772053822,
+      "description": "The Qwen3.5 Series 35B-A3B is a native vision-language model designed with a hybrid architecture that integrates linear attention mechanisms and a sparse mixture-of-experts model, achieving higher inference efficiency. Its overall...",
+      "context_length": 262144,
+      "architecture": {
+        "modality": "text+image+video->text",
+        "input_modalities": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "Qwen3",
+        "instruct_type": null
+      },
+      "pricing": {
+        "prompt": "0.0000001625",
+        "completion": "0.0000013"
+      },
+      "top_provider": {
+        "context_length": 262144,
+        "max_completion_tokens": 65536,
+        "is_moderated": false
+      },
+      "per_request_limits": null,
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "default_parameters": {
+        "temperature": 1,
+        "top_p": 0.95,
+        "top_k": 20,
+        "frequency_penalty": null,
+        "presence_penalty": null,
+        "repetition_penalty": null
+      },
+      "supported_voices": null,
+      "knowledge_cutoff": null,
+      "expiration_date": null,
+      "links": {
+        "details": "/api/v1/models/qwen/qwen3.5-35b-a3b-20260224/endpoints"
+      },
+      "benchmarks": {
+        "design_arena": [],
+        "artificial_analysis": {
+          "intelligence_index": null,
+          "coding_index": 37,
+          "agentic_index": null
+        }
+      },
+      "reasoning": {
+        "mandatory": false
+      }
+    },
+    {
+      "id": "~openai/gpt-sol-latest",
+      "canonical_slug": "~openai/gpt-sol-latest",
+      "alias_target": {
+        "name": "OpenAI: GPT-5.6 Sol",
+        "slug": "openai/gpt-5.6-sol"
+      },
+      "hugging_face_id": null,
+      "name": "OpenAI: GPT Sol Latest",
+      "created": 1789130928,
+      "description": "This model always redirects to the latest model in the GPT Sol family.",
+      "context_length": 1050000,
+      "architecture": {
+        "modality": "text+image+file->text",
+        "input_modalities": [
+          "file",
+          "image",
+          "text"
+        ],
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "Router",
+        "instruct_type": null
+      },
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "web_search": "0.01",
+        "input_cache_read": "0.0000002",
+        "input_cache_write": "0.0000025",
+        "overrides": [
+          {
+            "min_prompt_tokens": 272000,
+            "prompt": "0.000004",
+            "completion": "0.000015",
+            "input_cache_read": "0.0000004",
+            "input_cache_write": "0.000005"
+          }
+        ]
+      },
+      "top_provider": {
+        "context_length": 1050000,
+        "max_completion_tokens": 128000,
+        "is_moderated": true
+      },
+      "per_request_limits": null,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_completion_tokens",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "default_parameters": {
+        "temperature": null,
+        "top_p": null,
+        "top_k": null,
+        "frequency_penalty": null,
+        "presence_penalty": null,
+        "repetition_penalty": null
+      },
+      "supported_voices": null,
+      "knowledge_cutoff": "2026-02-16",
+      "expiration_date": null,
+      "links": {
+        "details": "/api/v1/models/~openai/gpt-sol-latest/endpoints"
+      },
+      "reasoning": {
+        "mandatory": false,
+        "default_enabled": true,
+        "supported_efforts": [
+          "max",
+          "xhigh",
+          "high",
+          "medium",
+          "low",
+          "none"
+        ],
+        "default_effort": "medium"
+      }
+    },
+    {
+      "id": "~deepseek/deepseek-pro-latest",
+      "canonical_slug": "~deepseek/deepseek-pro-latest",
+      "alias_target": {
+        "name": "DeepSeek: DeepSeek V4 Pro 0813",
+        "slug": "deepseek/deepseek-v4-pro-0813"
+      },
+      "hugging_face_id": null,
+      "name": "DeepSeek: DeepSeek Pro Latest",
+      "created": 1789399174,
+      "description": "This model always redirects to the latest model in the DeepSeek Pro family.",
+      "context_length": 1048576,
+      "architecture": {
+        "modality": "text->text",
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "Router",
+        "instruct_type": null
+      },
+      "pricing": {
+        "prompt": "0.00000066",
+        "completion": "0.00000198",
+        "input_cache_read": "0.000000022",
+        "overrides": [
+          {
+            "utc_days": [
+              "saturday",
+              "sunday"
+            ],
+            "prompt": "0.00000066",
+            "completion": "0.00000198",
+            "input_cache_read": "0.000000022"
+          },
+          {
+            "utc_days": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday"
+            ],
+            "utc_start": 0,
+            "utc_end": 100,
+            "prompt": "0.00000066",
+            "completion": "0.00000198",
+            "input_cache_read": "0.000000022"
+          },
+          {
+            "utc_days": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday"
+            ],
+            "utc_start": 100,
+            "utc_end": 400,
+            "prompt": "0.00000132",
+            "completion": "0.00000396",
+            "input_cache_read": "0.000000044"
+          },
+          {
+            "utc_days": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday"
+            ],
+            "utc_start": 400,
+            "utc_end": 600,
+            "prompt": "0.00000066",
+            "completion": "0.00000198",
+            "input_cache_read": "0.000000022"
+          },
+          {
+            "utc_days": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday"
+            ],
+            "utc_start": 600,
+            "utc_end": 1000,
+            "prompt": "0.00000132",
+            "completion": "0.00000396",
+            "input_cache_read": "0.000000044"
+          },
+          {
+            "utc_days": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday"
+            ],
+            "utc_start": 1000,
+            "utc_end": 0,
+            "prompt": "0.00000066",
+            "completion": "0.00000198",
+            "input_cache_read": "0.000000022"
+          }
+        ]
+      },
+      "top_provider": {
+        "context_length": 1048576,
+        "max_completion_tokens": 384000,
+        "is_moderated": false
+      },
+      "per_request_limits": null,
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "default_parameters": {
+        "temperature": 1,
+        "top_p": 1
+      },
+      "supported_voices": null,
+      "knowledge_cutoff": null,
+      "expiration_date": null,
+      "links": {
+        "details": "/api/v1/models/~deepseek/deepseek-pro-latest/endpoints"
+      },
+      "reasoning": {
+        "mandatory": false,
+        "supported_efforts": [
+          "max",
+          "high",
+          "low"
+        ],
+        "default_effort": "high"
+      }
+    },
+    {
+      "id": "inclusionai/ling-3.0-flash-vl:free",
+      "canonical_slug": "inclusionai/ling-3.0-flash-vl-20260910",
+      "hugging_face_id": "inclusionAI/Ling-3.0-flash-VL",
+      "name": "inclusionAI: Ling 3.0 Flash VL (free)",
+      "created": 1789056114,
+      "description": "Ling 3.0 Flash VL builds on Ling 3.0 Flash (124B total / 5.5B active MoE from InclusionAI), further strengthening its language capabilities while adding native visual perception and advanced visual...",
+      "context_length": 262144,
+      "architecture": {
+        "modality": "text+image+video->text",
+        "input_modalities": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "Other",
+        "instruct_type": null
+      },
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      },
+      "top_provider": {
+        "context_length": 262144,
+        "max_completion_tokens": 32768,
+        "is_moderated": false
+      },
+      "per_request_limits": null,
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logprobs",
+        "max_tokens",
+        "presence_penalty",
+        "reasoning",
+        "repetition_penalty",
+        "seed",
+        "stop",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "default_parameters": {},
+      "supported_voices": null,
+      "knowledge_cutoff": null,
+      "expiration_date": null,
+      "links": {
+        "details": "/api/v1/models/inclusionai/ling-3.0-flash-vl-20260910/endpoints"
+      },
+      "benchmarks": {
+        "design_arena": [],
+        "artificial_analysis": {
+          "intelligence_index": 25,
+          "coding_index": 57,
+          "agentic_index": 30
+        }
+      },
+      "reasoning": {
+        "mandatory": false,
+        "default_enabled": true
+      }
+    },
+    {
+      "id": "openai/gpt-6-astra:batch",
+      "canonical_slug": "openai/gpt-6-astra-20260903",
+      "hugging_face_id": null,
+      "name": "OpenAI: GPT-6 Astra (batch)",
+      "created": 1788552838,
+      "description": "GPT-6 Astra is OpenAI's flagship model for demanding end-to-end work. It is suited for advanced analysis, software engineering, deep research, scientific work, and document creation, with particular strengths in long-horizon...",
+      "context_length": 1050000,
+      "architecture": {
+        "modality": "text+image+file->text",
+        "input_modalities": [
+          "file",
+          "image",
+          "text"
+        ],
+        "output_modalities": [
+          "text"
+        ],
+        "tokenizer": "GPT",
+        "instruct_type": null
+      },
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.000025",
+        "web_search": "0.01",
+        "input_cache_read": "0.0000005",
+        "input_cache_write": "0.00000625",
+        "overrides": [
+          {
+            "min_prompt_tokens": 272000,
+            "prompt": "0.00001",
+            "completion": "0.0000375",
+            "input_cache_read": "0.000001",
+            "input_cache_write": "0.0000125"
+          }
+        ]
+      },
+      "top_provider": {
+        "context_length": 1050000,
+        "max_completion_tokens": 128000,
+        "is_moderated": true
+      },
+      "per_request_limits": null,
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "default_parameters": {},
+      "supported_voices": null,
+      "knowledge_cutoff": null,
+      "expiration_date": null,
+      "links": {
+        "details": "/api/v1/models/openai/gpt-6-astra-20260903/endpoints"
+      },
+      "benchmarks": {
+        "design_arena": [],
+        "artificial_analysis": {
+          "intelligence_index": 52.8,
+          "coding_index": 76.9,
+          "agentic_index": 51.5
+        }
+      },
+      "reasoning": {
+        "mandatory": true,
+        "default_enabled": true,
+        "supported_efforts": [
+          "max",
+          "xhigh",
+          "high",
+          "medium",
+          "low"
+        ],
+        "default_effort": "medium"
+      }
+    }
+  ],
+  "total_count": 443,
+  "links": {
+    "next": null
+  }
+}

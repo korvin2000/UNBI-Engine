@@ -66,6 +66,22 @@ public class GatewayDirectory {
     }
 
     /**
+     * One {@code GET} under this endpoint, with the headers a run would carry, read as JSON.
+     *
+     * <p>The seam the info nodes ask through, rather than each of them taking an {@link HttpTransport}
+     * of its own. Credential resolution is the part that must not be re-implemented: a node that
+     * built its own headers would be the one place where a key the engine cannot see produces a
+     * gateway's 401 instead of this engine's "no credential named X, looked in …".
+     *
+     * @param path relative to the base URL, leading slash included, already URI-safe
+     * @throws com.unbi.engine.llm.spec.LlmFailure for anything the gateway or the socket did wrong,
+     *     status 4xx and 5xx included — the caller decides which of those is fatal
+     */
+    public JsonNode get(EndpointSpec endpoint, String path, Duration timeout) {
+        return transport.get(endpoint.baseUrl() + path, headers(endpoint), timeout);
+    }
+
+    /**
      * The headers a real call would carry.
      *
      * <p>A missing credential is not fatal here. "No credential named 'openrouter'" is a far more

@@ -81,6 +81,9 @@ const PATHS: Readonly<Record<string, string>> = {
   refresh: 'M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5',
   // A pencil over a card: edit the thing behind this field.
   edit: 'M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17zM13 8l3 3',
+  // Two short diagonals in a corner: the window-chrome resize grip, which is the one glyph nobody
+  // has to be taught. Drawn to the bottom-right of the box so it sits in the corner it means.
+  grip: 'M21 11 11 21M21 17l-4 4',
 };
 
 @Component({

@@ -265,15 +265,57 @@
   cursor: help;
 }
 
+// Left-aligned, not centred. A column of centred labels has no edge for the eye to run down, so
+// four settings read as four unrelated things; aligned, they read as a form.
 .row__label {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 5px;
   margin-bottom: 3px;
   font-size: 11px;
   color: var(--text-muted);
-  text-align: center;
+}
+
+// --- A row on one line ----------------------------------------------------
+//
+// Label left, control right. The port is the subtle part: it is still a child of `.control`, but
+// the label column has moved `.control`'s left edge inward, so an offset measured from there would
+// no longer land on the node border. Making `.control` static hands the port back to `.row` as its
+// containing block — whose padding box starts exactly at the node's inner edge, which is why the
+// offset below is 0 rather than the negative padding the other rows use.
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline__label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  // Enough that the controls line up down the node, and not so much that a spinner is squeezed.
+  min-width: 40%;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.inline__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control--inline {
+  position: static;
+  flex: 1;
+  min-width: 0;
+
+  .port--in {
+    left: 0;
+  }
 }
 
 .row__driven {
@@ -340,6 +382,13 @@
 // A tall control anchors its port to the first line instead of to the middle of the box.
 .control--tall {
   --port-y: 15px;
+}
+
+// A readout is not a control: it stretches to whatever it holds — one line, eight, or a wrapped
+// row of chips — instead of being centred in a fixed 20px.
+.control--readout {
+  align-items: stretch;
+  min-height: 0;
 }
 
 // `.f-connector-connected` is what the unified `fConnector` directive applies.
@@ -549,6 +598,64 @@
   font-variant-numeric: tabular-nums;
 }
 
+// --- The width grip --------------------------------------------------------
+//
+// In the footer's bottom-right corner, because the right *edge* belongs to the output ports: they
+// are 14px circles centred on it, and a full-height grip would cover every one of them. The footer
+// hosts no ports, so the corner is the one place a grip can live without competing with anything.
+//
+// Quiet until the node is hovered or selected: twenty nodes each showing a permanent handle is
+// twenty pieces of furniture on a canvas whose subject is the graph.
+.grip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 16px;
+  margin-right: -3px;
+  color: var(--text-faint);
+  opacity: 0;
+  cursor: ew-resize;
+  touch-action: none;
+  transition:
+    opacity var(--tempo) var(--ease),
+    color var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--accent-node);
+  }
+}
+
+:host(:hover) .grip,
+:host(.f-selected) .grip,
+:host(.is-resizing) .grip {
+  opacity: 0.75;
+}
+
+:host(.is-resizing) .grip {
+  color: var(--accent-node);
+  opacity: 1;
+}
+
+// The live number, beside the grip and in the same corner the drag is happening in.
+.foot__width {
+  position: relative;
+  flex: none;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--accent-node-dim);
+  color: var(--accent-node);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+// While the width is being dragged the node follows the pointer, and a transition on the body
+// would make it lag behind by a frame or two — which reads as the drag being imprecise.
+:host(.is-resizing) {
+  transition: none;
+}
+
 
 // --- A user-given name -----------------------------------------------------
 // Italic rather than a different colour: the header already carries the category accent, and a
@@ -621,29 +728,76 @@
 
 .advanced__head {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 5px var(--node-pad);
+  align-items: stretch;
   background: var(--node-body);
-  border: none;
   color: var(--text-muted);
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  text-align: left;
-  transition: color var(--tempo) var(--ease), background var(--tempo) var(--ease);
+  transition: color var(--tempo) var(--ease), box-shadow var(--tempo) var(--ease);
+
+  // The strip says when the panel is showing this node, because two nodes' settings look alike and
+  // an inspector pointing at the wrong one is how a setting gets changed on the wrong node.
+  &.is-active {
+    color: var(--text);
+    box-shadow: inset 2px 0 0 var(--accent-node);
+  }
+}
+
+.advanced__fold,
+.advanced__open {
+  color: inherit;
+  transition: color var(--tempo) var(--ease);
 
   &:hover {
     color: var(--text);
-    background: var(--node-body-hover, var(--node-body));
   }
 
   &:focus-visible {
     outline: 2px solid var(--accent-node);
     outline-offset: -2px;
   }
+}
+
+// The chevron: folds the settings out into the node itself.
+.advanced__fold {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  padding-left: 4px;
+}
+
+// The label: opens the panel, where there is room to work.
+.advanced__open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 5px var(--node-pad) 5px 2px;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+
+  &:hover .advanced__panel {
+    opacity: 1;
+  }
+}
+
+// Hinted rather than announced: the strip is not primarily a button, and a permanent icon on every
+// node would be four pixels of noise per node.
+.advanced__panel {
+  flex: none;
+  color: var(--accent-node);
+  opacity: 0;
+  transition: opacity var(--tempo) var(--ease);
+}
+
+.is-active .advanced__panel {
+  opacity: 1;
 }
 
 .advanced__chevron {
@@ -684,6 +838,39 @@
   background: var(--node-body);
   padding-bottom: 4px;
   animation: advanced-in var(--tempo-slow) var(--ease);
+}
+
+// --- What a closed fold is hiding -----------------------------------------
+// Read-only chips, borrowing the multi-select chip's shape minus every interaction: no pointer, no
+// hover, no focus ring. They are a sentence about the node, not a control on it.
+.advanced__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 0 var(--node-pad) 5px;
+  background: var(--node-body);
+}
+
+.chip--summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  max-width: 100%;
+  padding: 1px 6px;
+  background: var(--node-sunken);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--text-faint);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.chip__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent-node);
 }
 
 @keyframes advanced-in {

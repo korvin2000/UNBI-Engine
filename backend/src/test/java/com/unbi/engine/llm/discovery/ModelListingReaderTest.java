@@ -188,6 +188,55 @@ class ModelListingReaderTest {
         }
     }
 
+    @Nested
+    @DisplayName("the paged envelope")
+    class Envelope {
+
+        /**
+         * The shape a live OpenRouter listing now arrives in: 735 KB, 443 entries, a
+         * {@code total_count} beside them and a {@code links.next} that is currently null. The
+         * fixture is that response with all but five entries dropped — so the count and the array
+         * disagree on purpose.
+         */
+        private static final String BODY = """
+                {"data":[
+                   {"id":"vendor/one","context_length":8192},
+                   {"id":"vendor/two","context_length":8192}
+                 ],
+                 "total_count":443,
+                 "links":{"next":null}}""";
+
+        @Test
+        @DisplayName("the count comes from total_count, so a page size is never read as a catalogue size")
+        void countPrefersTotalCount() {
+            assertThat(ModelListingReader.count(MAPPER.readTree(BODY))).isEqualTo(443);
+            assertThat(ModelListingReader.read(MAPPER.readTree(BODY))).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("a gateway that publishes no total is counted by what it sent")
+        void countFallsBackToTheArray() {
+            assertThat(ModelListingReader.count(MAPPER.readTree(
+                            "{\"data\":[{\"id\":\"a\"},{\"id\":\"b\"},{\"id\":\"c\"}]}")))
+                    .isEqualTo(3);
+            assertThat(ModelListingReader.count(MAPPER.readTree("{}"))).isZero();
+            assertThat(ModelListingReader.count(null)).isZero();
+        }
+
+        @Test
+        @DisplayName("the envelope does not hide an entry from a lookup by id")
+        void entriesAreFoundInsideIt() {
+            var body = MAPPER.readTree(BODY);
+
+            assertThat(ModelListingReader.entry(body, "VENDOR/TWO"))
+                    .isPresent()
+                    .get()
+                    .satisfies(entry -> assertThat(entry.path("id").asString("")).isEqualTo("vendor/two"));
+            assertThat(ModelListingReader.entry(body, "vendor/three")).isEmpty();
+            assertThat(ModelListingReader.entry(body, "")).isEmpty();
+        }
+    }
+
     @Test
     @DisplayName("a body with no model list is an empty result rather than a failure")
     void unreadableBody() {

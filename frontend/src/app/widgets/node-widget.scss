@@ -285,6 +285,25 @@
   overflow: hidden;
 }
 
+// The same panel, pinned to the viewport instead of to the trigger: inside a scrolling column an
+// absolute panel is clipped by the column, so a list near the bottom of the inspector would open
+// into a few pixels of visible space. Position, width and height are measured off the trigger when
+// the list opens, and the list closes if the page moves under it — see `ListPlacement`.
+.select__panel--fixed {
+  position: fixed;
+  right: auto;
+  // Both cleared, because the inline style sets exactly one of them: leaving the inline panel's
+  // `top: calc(100% + 3px)` in place would stretch a flipped panel from the bottom of the window.
+  top: auto;
+  bottom: auto;
+  z-index: 60;
+
+  .select__list {
+    // The panel now owns the height; the list is what flexes inside it.
+    max-height: none;
+  }
+}
+
 .select__search {
   display: flex;
   align-items: center;
@@ -827,7 +846,9 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-faint);
-  opacity: 0;
+  // Visible at rest, not hidden: a way out of a four-row box that only appears under the pointer
+  // is a way out nobody finds. Quiet enough not to compete with the text, full on approach.
+  opacity: 0.5;
   transition:
     opacity var(--tempo) var(--ease),
     color var(--tempo) var(--ease),
@@ -843,21 +864,15 @@
   }
 }
 
-// Revealed on approach, and always once the field has focus — otherwise a keyboard user could
-// never reach it.
 .area:hover .area__expand,
-.area:focus-within .area__expand {
+.area:focus-within .area__expand,
+.area__expand:focus-visible {
   opacity: 1;
 }
 
 // Room for the button, so the first line of text never runs underneath it.
 .field--expandable {
   padding-right: 28px;
-}
-
-.unit--blank {
-  font-style: italic;
-  opacity: 0.75;
 }
 
 // --- A list of files -------------------------------------------------------
@@ -967,4 +982,230 @@
   color: var(--text-faint);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+}
+
+// --- A readout -------------------------------------------------------------
+//
+// Not a control: what a fetch produced. A fact is a two-column line — muted name left, value right
+// — which is the shape a table of facts has to have to be readable at twenty rows: the values line
+// up down a right edge, so "128,000" and "9,000" can be compared without reading the labels twice.
+// Tabular figures for the same reason.
+.fact {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.fact__label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 1 auto;
+  // The same floor the inline settings row uses, and for a sharper reason here: a long value was
+  // squeezing "Gateway" down to "Gate…", which reads as a rendering fault. The value is the half
+  // that may be abbreviated — it carries the whole text in its tooltip, and the label does not.
+  min-width: 40%;
+  color: var(--text-muted);
+}
+
+.fact__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fact__hint {
+  flex: none;
+  color: var(--text-faint);
+  cursor: help;
+}
+
+.fact__value {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  // Selectable, unlike everything else on the canvas: a fact is something people take away. The
+  // `fDragBlocker` on the element is what keeps the flow library from turning the selection
+  // gesture into a node drag.
+  user-select: text;
+  cursor: text;
+}
+
+.fact__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// The unit, in the spinner's own quieter treatment: "tok" is not part of the number, and at the
+// same weight it reads as one.
+.fact__unit {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+// A boolean, in the two colours the node footer uses for the same two answers.
+.fact__flag--ok {
+  color: var(--ok);
+}
+
+.fact__flag--problem {
+  color: var(--danger);
+}
+
+// Nothing published, and nothing fetched: two different statements, so two different marks. The
+// dash is a value ("this gateway does not say"); the pending line is the absence of one.
+.fact__blank {
+  color: var(--text-faint);
+  cursor: help;
+}
+
+.fact__pending {
+  color: var(--text-faint);
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.fact--line .fact__blank,
+.fact--line .fact__pending {
+  margin-left: auto;
+}
+
+// The copy button, on approach. It replaces nothing and moves nothing: the slot is always there,
+// so a row does not shift under the pointer as it arrives.
+.fact__copy {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity var(--tempo) var(--ease),
+    color var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--text);
+  }
+
+  &.is-done {
+    color: var(--ok);
+    opacity: 1;
+  }
+
+  // The clipboard was refused, and the value is selected instead: stay visible, because the
+  // instruction that replaces the press is in the tooltip.
+  &.is-blocked {
+    color: var(--warn);
+    opacity: 1;
+  }
+}
+
+.fact:hover .fact__copy,
+.fact__copy:focus-visible {
+  opacity: 1;
+}
+
+// --- A readout that is a paragraph, or a set -------------------------------
+.fact--block,
+.fact--chips {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+
+// A paragraph: its own lines, wrapped, and clamped so one verbose model description cannot make a
+// node taller than the graph around it.
+.fact__prose {
+  max-width: 100%;
+  padding: 4px 6px;
+  background: var(--node-sunken);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+
+  // Faded rather than cut: a hard edge mid-word looks like a rendering fault, while a fade reads
+  // as "there is more", which is exactly what the button under it offers.
+  &.is-clamped {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 8;
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, #000 72%, transparent 100%);
+  }
+}
+
+.fact__more {
+  align-self: flex-start;
+  padding: 1px 6px;
+  background: none;
+  border: 1px solid var(--node-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: 10px;
+  cursor: pointer;
+  transition:
+    border-color var(--tempo) var(--ease),
+    color var(--tempo) var(--ease);
+
+  &:hover {
+    border-color: var(--accent-node);
+    color: var(--text);
+  }
+}
+
+.fact__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+// The multi-select chip, with every interaction removed: it reports what the gateway listed
+// rather than offering a choice, so it must not invite a press.
+.chip--fact {
+  padding: 1px 6px;
+  font-size: 10px;
+  cursor: default;
+  user-select: text;
+}
+
+// --- A control this build does not have ------------------------------------
+// Dashed and muted: it reads as a gap in the editor rather than as a problem with the workflow,
+// which is exactly what it is.
+.unsupported {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 4px 7px;
+  border: 1px dashed var(--node-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-style: italic;
 }

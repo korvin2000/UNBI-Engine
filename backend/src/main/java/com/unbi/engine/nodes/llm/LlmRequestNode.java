@@ -123,9 +123,11 @@ public class LlmRequestNode implements NodeDefinition, NodeProbe {
                 .setting("jsonSchema", "JSON Schema", Types.TEXT,
                         Widget.TextField.code("{ \"type\": \"object\" }", 4).withEditor(), "")
                 .onlyWhen("responseFormat", "json_schema")
+                .section("Response shape")
                 .advancedSetting("schemaName", "Schema Name", Types.TEXT,
                         Widget.TextField.of("response"), "response")
                 .onlyWhen("responseFormat", "json_schema")
+                .section("Batching")
                 .advancedSetting("combine", "Combine Lists", Types.TEXT, Widget.Dropdown.of(
                         "pair", "Pair up by position",
                         "cross", "Every combination"), "pair")
@@ -138,16 +140,21 @@ public class LlmRequestNode implements NodeDefinition, NodeProbe {
                 .advancedSetting("continueOnError", "Continue On Error", Types.BOOLEAN, new Widget.Toggle(), true)
                 .hint("For a batch: a failed request is counted and the rest still run. The node "
                         + "fails only when nothing answered.")
-                .advancedSetting("strictTemplates", "Fail On Missing Values", Types.BOOLEAN,
-                        new Widget.Toggle(), true)
-                .hint("A {{name}} nothing bound fails the request rather than rendering as a hole. "
-                        + "Write \\{{ for a literal brace.")
+                .section("Web search")
                 .advancedSetting("webSearch", "Web Search", Types.BOOLEAN, new Widget.Toggle(), false)
                 .advancedSetting("requireSearchEvidence", "Require Search Evidence", Types.BOOLEAN,
                         new Widget.Toggle(), false)
                 .onlyWhen("webSearch", "true")
                 .hint("Rejects an answer with no provider-side proof it searched. URLs in the "
                         + "prose are not proof.")
+                // Four settings, one question: what should happen when something is wrong. Grouped
+                // together because they are read together — the two that default to on are both
+                // about refusing an answer that only looks like one.
+                .section("Refusals and retries")
+                .advancedSetting("strictTemplates", "Fail On Missing Values", Types.BOOLEAN,
+                        new Widget.Toggle(), true)
+                .hint("A {{name}} nothing bound fails the request rather than rendering as a hole. "
+                        + "Write \\{{ for a literal brace.")
                 .advancedSetting("strict", "Refuse Unsupported Settings", Types.BOOLEAN,
                         new Widget.Toggle(), true)
                 .hint("Off degrades instead, and says so in the log.")
@@ -155,6 +162,7 @@ public class LlmRequestNode implements NodeDefinition, NodeProbe {
                 .advancedSetting("retries", "Attempts", Types.NUMBER,
                         new Widget.NumberField(1, 6, 1, "", false), 3d)
                 .hint("Per request. Only transient failures are retried; a rejected request is not.")
+                .section("")
                 .out("text", "Text", Types.TEXT)
                 .hint("The answer. For a batch, every answer, separated by a blank line.")
                 .out("results", "Results", LlmTypes.RESULT_LIST)

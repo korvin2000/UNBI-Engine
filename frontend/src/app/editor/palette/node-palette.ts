@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FFlowModule } from '@foblex/flow';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { CategoryGroup, NodeSpec, groupIntoCategories } from '../../core/catalog/catalog.models';
+import { withoutReadouts } from '../../core/catalog/node-rows';
 import * as commands from '../../core/graph/commands';
 import { GraphStore } from '../../core/graph/graph-store';
 import { newNode } from '../../core/graph/workflow.models';
@@ -116,14 +117,26 @@ export class NodePalette {
     }
   }
 
-  /** Adds a preset's node, already configured, with the preset's name on it. */
+  /**
+   * Adds a preset's node, already configured, with the preset's name on it.
+   *
+   * Readouts are dropped on the way in, exactly as they are on the way out: a preset saved by an
+   * older build can still be carrying what a gateway answered last week, and a node that arrives
+   * already claiming facts nobody fetched is worse than an empty one.
+   */
   protected addPreset(preset: Preset): void {
-    if (!this.catalog.byId().has(preset.nodeType)) {
+    const spec = this.catalog.byId().get(preset.nodeType);
+    if (!spec) {
       return;
     }
     this.graph.dispatch(
       commands.addNode(
-        newNode(preset.nodeType, this.defaultPosition(), { ...preset.values }, preset.name),
+        newNode(
+          preset.nodeType,
+          this.defaultPosition(),
+          withoutReadouts(spec, preset.values),
+          preset.name,
+        ),
         preset.name,
       ),
     );

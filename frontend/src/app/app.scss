@@ -9,6 +9,10 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  // The positioning context for the inspector: floating, and docked on a narrow window, it is an
+  // absolute card inside the workspace rather than inside the canvas — a panel positioned against
+  // the canvas would be scaled and clipped by it.
+  position: relative;
 }
 
 .workspace__panel {

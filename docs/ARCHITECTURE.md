@@ -103,9 +103,25 @@ them matter:
 | `.setting(…)` | drawn in the node |
 | `.advancedSetting(…)` / `.advanced()` | folded into an **Advanced** strip, with a badge counting what has been changed |
 | `.onlyWhen(sibling, values…)` | drawn only while a sibling setting holds one of those values |
+| `.section(name)` | every input declared *after* it carries that group name, until the next call; `section("")` ends grouping. The inspector draws the groups as sub-sections and the node body ignores them |
+| `.display(…)` / `.advancedDisplay(…)` | a fact the engine found out: drawn, never typed into, never wired |
 | `.action(NodeAction…)` | a button in the node header, answered by `NodeProbe` — or, for `NodeAction.automatic`, no button: the editor runs it when the field it feeds is opened |
 
-The ranking is declared by the node's author because nothing else can know it. Both folding rules
+The ranking is declared by the node's author because nothing else can know it.
+
+`.section` is positional for the same reason `.hint` is: a node with four groups of settings would
+otherwise carry the group name on twenty lines, and a reader would have to diff those strings to see
+where one group ends. Declared in order, the grouping reads as the outline it is. Groups are
+**presentation only** — nothing in an execute path reads one.
+
+`.display` earns a widget kind rather than an output port, and that is the decision worth stating.
+An output exists only during a run and vanishes with it; a widget value persists in the saved
+workflow and is on screen without anything being run — which is what "how much credit is left on
+this endpoint" has to be to be worth reading. The value is already formatted by the backend, because
+the backend is what parsed the body: a gateway's `"0.0000001625"` per token is `$0.1625 per M`, and a
+second implementation of that multiplication in TypeScript is a second place for it to be wrong.
+A display input is refused at construction if it is connectable or required, since a port into a
+fact offers to overwrite it and "required" would make a node invalid until a gateway had been asked. Both folding rules
 are refused at construction for a *connectable* input: a connector that is not laid out loses its
 geometry and drags its edges to the corner of the node (Foblex FF1006), so the restriction sidesteps
 that rather than working around it.
@@ -132,6 +148,7 @@ src/app/
     types/        PortType mirror, assignability, colour keys
     graph/        WorkflowDoc, GraphStore (signals), Command + history
     catalog/      CatalogService, descriptor parsing, palette grouping, node probes
+                  node-rows.ts — the row model both the node and the inspector render from
     runtime/      EngineSocket (RxJS), RunStore (signals), wire protocol
     presets/      saved node configurations, fetched from the engine
     profiles/     engine-side named configurations (endpoints), and the dialog that edits them
@@ -140,6 +157,7 @@ src/app/
   editor/
     canvas/       Foblex wiring + the node component
     palette/      left panel: search, categories, drag-to-canvas
+    inspector/    one node's settings, beside the canvas: panel + its own signal store
     toolbar/      top bar: run/stop, status, file actions
     workflow-file.service.ts   save, open, the built-in example
   widgets/        one component, switching over the declared widget kinds
@@ -151,13 +169,22 @@ src/app/
 styles/           tokens.scss — the palette, per-category accents, per-type port colours
 ```
 
-There is no separate inspector panel: a node's widgets live in the node, as in the reference UI.
+A node's widgets live **in the node**, as in the reference UI; the inspector panel is a second view
+of the same rows rather than the place settings live. Both call `buildRows` (see §3, *Nodes stay
+small*), so neither can disagree with the other about what a node currently is.
 And the widgets are one component with a `@switch` rather than one component per kind behind a
 registry — small controls sharing one disabled/label behaviour do not each earn a file and an
 indirection. The first one that grows real complexity of its own can be extracted then; the LLM
 pack added three kinds without any of them reaching that bar.
 
 - **Signals** own view state: document, selection, viewport, per-node run status.
+- **The selection has two owners**, and a programmatic one has to write both. `GraphStore.selection`
+  is what Delete, Ctrl+D, the context menu and the inspector read; the flow library keeps its own
+  copy and is what draws the border, and the app only ever *hears* about that one, through
+  `fSelectionChange`. So every press the library does not see — the node's Advanced strip and its
+  width grip carry `fDragBlocker` — selects through `CanvasSelection`, which writes the store and
+  hands the ids to the flow (`FFlowComponent.select`, registered by `FlowCanvas`). A store-only
+  selection is how the canvas ends up highlighting one node while Delete removes another.
 - **RxJS** owns event streams: the WebSocket, drag gestures, debounced autosave.
 - **Commands** own every document mutation. Undo/redo is free and correct from day one because it
   is never retrofitted. `AddNode`, `RemoveNodes`, `Connect`, `Disconnect`, `MoveNodes`, `SetInput`.
@@ -211,12 +238,119 @@ A node body never scrolls. It did, briefly, behind a ceiling — and any `overfl
 output sockets away with it the moment the fold opens. Height comes from content; the three rules
 above are what keep it short.
 
+Two layout decisions do the rest of the shortening. A `number` sits **beside** its label rather than
+under it — a spinner is a quarter of the node's width, so the line above it was empty, and a node of
+five numbers is five lines shorter for it. And a *closed* Advanced strip whose settings have been
+moved lists them as tiny read-only `label: value` chips, so a saved graph says what was tuned
+without anything being opened.
+
+#### A node's width belongs to the document
+
+The rules above keep a node short; none of them makes it *wide*, and a few nodes genuinely need to
+be — a JSON schema, a long prompt, a table of discovered facts. `WorkflowNode.width` is therefore an
+optional number of canvas pixels, and `resizeNodes(ids, width)` sets or clears it for a whole
+selection in one undoable step. It is part of the workflow rather than a view preference: which node
+was widened is something the author decided, and a reader of the saved file should get it back.
+Absent rather than `252` when untouched, so a node that never expressed an opinion still follows
+`--node-width` and the default can move without rewriting every file.
+
+Three things about the mechanism are worth stating, because each is a decision a later change could
+quietly undo:
+
+- **It is a plain CSS width** — `[style.--node-width.px]` on the node host, and nothing else. Every
+  `[fNode]` host already carries a `ResizeObserver` that re-anchors its edges on any size change, so
+  no `fNodeSize` or `redraw()` is involved. `fResizeHandle` is not used either: it writes a fixed
+  height as well, which would freeze a body whose height comes from its content.
+- **The grip is in the footer's bottom-right corner**, not down the right edge, because the output
+  ports are 14px circles centred *on* that edge and a full-height grip would cover every one of
+  them. The drag is hand-rolled with pointer capture and divides the pointer delta by the canvas
+  scale — published by `FlowCanvas` through `ViewportStore` — since the pointer moves in screen
+  pixels while the width is in canvas pixels. It rounds to 8px and snaps to the default and to
+  widths other nodes in the document already have, so nodes lined up by eye end up identical rather
+  than four pixels apart. The in-progress width stays in a local signal and dispatches once on
+  release: one undo step per gesture, exactly as for a node being dragged.
+- **A pointer drag is not the accessible route.** The same width is a number field (252–640, step 8)
+  with a Reset in the inspector's footer, "Reset width" is in the node menu when there is a width to
+  reset, and a double-click on the grip does the same.
+
+Growing a node does **not** push its neighbours aside. The canvas is a layout the author arranged,
+and a resize that moved four other nodes would be a resize that has to be undone.
+
+#### The inspector panel, and why it is not a second node body
+
+Twenty sampling knobs are workable in a 252px node only in the sense that they fit. The inspector
+(`editor/inspector/`) is where one node's settings are actually edited: a docked column at the right
+edge, or a card floating over the canvas, styled as the node it is editing — same accent header,
+same 2px rule, same sunken body, same footer. It opens from the node's Advanced strip, the node
+context menu and a toolbar toggle, and follows the canvas selection while it is not pinned. The
+toggle is disabled while there is no node to show: the panel draws a node or draws nothing, so a
+button that reported itself pressed over an empty screen would announce a panel nobody could see.
+
+The rule that keeps it honest is that it is **not** a second implementation. `core/catalog/node-rows.ts`
+is a pure function from an explicit context — node, descriptor, document, probe answers — to the
+rows of one node: value, wired, discovered, allowed, applies, editable, changed. The node adds the
+port half (connector id, type colour, row shape); the panel adds a label column, sub-sections from
+each input's declared `group`, and a filter past ten rows — cleared when the panel moves to another
+node, since a query typed on a twenty-row node would otherwise go on filtering a five-row one whose
+header has no filter box to clear it with. A control this build cannot draw is drawn in both places
+as the same placeholder, although it is not editable: a panel that dropped the row would disagree
+with the node about what the node has. A condition, a narrowed list, a
+discovered model list and a "wired" takeover therefore behave identically in the two places, because
+there is one place that decides what they are.
+
+Two things follow from the panel being outside the canvas. Its body *may* scroll, since it has no
+ports to clip — which is the whole reason the settings are workable there. And a dropdown inside a
+scrolling body cannot use an absolutely positioned list, because the body would clip it; `NodeWidget`
+takes a `listPlacement`, and the panel passes `fixed`, which measures the trigger when the list opens
+and pins the list to the viewport instead (flipping upward near the bottom, and closing once the
+measurement goes stale — the page scrolling under it, or the window resizing). That scroll listener
+is in the capture phase, because a scroll does not bubble and the container that moves is an
+ancestor; capture also delivers scrolls from *descendants*, so the target is checked — the panel's
+own option list is a scroller, and closing the list on the first wheel tick would make exactly the
+thousand-model listing the feature exists for unusable. Inside the canvas the placement stays
+`inline`: the canvas is transformed, so `position:
+fixed` there is fixed to the transform rather than to the window.
+
+The docked panel takes its width from the canvas rather than overlaying it, and the graph does not
+move when it opens: the flow canvas's origin is its own left edge, so shrinking it from the right
+leaves every node on the same pixel. (Foblex does expose a public way to shift the canvas — the
+`position` input on `f-canvas`, against the combined position `fCanvasChange` reports — if a future
+panel ever needs to open from the left.) Below 1100px the column becomes a right-edge overlay and
+floating is turned off; below 640px it is a bottom sheet. All three are CSS media queries, so there
+is no second source of truth about the window's size.
+
 A fourth rule is about *options* rather than layout. `Widget.Dropdown.narrowedBy` says "offer only
 the options the node wired into this socket lists in that input". That is what makes the LLM Request
 node show only the response formats the connected model declares, automatically, while the editor
 still knows nothing about models or response formats. Nothing wired in means nothing is known, which
 is no reason to hide a choice, so every option is offered — an *empty* list is a statement and a
 *missing* one is not.
+
+#### A `display` row reports instead of asking
+
+`Widget.Display` is the one widget kind that is not a control: its value is written by a node's
+`discover` action — what a gateway publishes about itself, or about a model — and the node shows it.
+The row model is where that has to be known. `isEditable` is false for a readout, so it is never
+counted as changed, never touched by a reset dot or by "Reset *n* changes", and `withoutReadouts`
+drops those keys both when a node is saved as a preset and when a preset is instantiated: what a
+gateway answered last Tuesday is not part of a configuration, and a node that arrived already
+claiming freshly-fetched facts would be worse than an empty one. `GraphStore.issues` skips readouts
+in the required-value loop for the same reason — a fact nobody has fetched yet is not a missing
+input, and reporting it would put a warning on the one row nobody can act on.
+
+A readout draws its **own** label, because a fact reads as a two-column line — muted name left,
+value right in tabular figures — rather than as a control under a caption; a node that reports
+thirty facts would otherwise be sixty rows tall. That is also why the inspector suppresses its own
+label row for these and renders the widget alone: one rendering of a readout, in both places. Three
+styles carry the three shapes the facts actually have: a line, a paragraph (clamped, with the full
+text offered in the existing full-window editor, read-only) and a set (read-only chips).
+
+Three states stay distinguishable, which is the whole reason a readout does not fall back to its
+declared default: nothing stored is "nobody has asked yet", `""` is "asked, and this gateway
+publishes no answer", and anything else is a fact. A line that parses as an ISO-8601 instant is said
+the way people say it — "6 minutes ago", recomputed each minute from one shared `MinuteClock` rather
+than one timer per row — with the exact time in its tooltip, because a fetched fact is only as good
+as its age.
 
 ## 4. Execution model
 

@@ -1,0 +1,21 @@
+{
+  "data": {
+    "id": "~anthropic/claude-opus-latest",
+    "name": "Anthropic: Claude Opus Latest",
+    "created": 1776795361,
+    "description": "This model always redirects to the latest model in the Claude Opus family.",
+    "architecture": {
+      "tokenizer": "Router",
+      "instruct_type": null,
+      "modality": "text+image->text",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ]
+    },
+    "endpoints": []
+  }
+}

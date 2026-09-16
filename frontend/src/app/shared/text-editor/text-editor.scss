@@ -123,6 +123,18 @@
   }
 }
 
+// The same shape as the buttons beside it, minus the affordance: in a viewer this slot states what
+// the dialog is rather than offering something to press.
+.tool--static {
+  border-style: dashed;
+  color: var(--text-faint);
+  cursor: default;
+
+  &:hover {
+    border-color: var(--border);
+  }
+}
+
 .tool__chevron {
   transition: transform var(--tempo) var(--ease);
 

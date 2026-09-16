@@ -101,6 +101,7 @@ public record NodeDescriptor(
         private String icon = "node";
         private String accent = "slate";
         private String description = "";
+        private String section = "";
         private boolean lastDeclaredWasOutput;
 
         private Builder(String id, String label) {
@@ -162,6 +163,33 @@ public record NodeDescriptor(
             return addInput(new NodeInput(key, label, type, false, false, widget, defaultValue, null, true));
         }
 
+        /**
+         * A fact the engine found out: drawn in the node, never typed into, never wired.
+         *
+         * <p>A widget value rather than an output, which is the decision worth explaining. An output
+         * exists only during a run and vanishes with it; a value persists in the saved workflow and
+         * is on screen without anything being run — which is what "how much credit is left on this
+         * endpoint" has to be to be worth reading. The default is blank because blank is a fact of
+         * its own: "this gateway does not publish it".
+         */
+        public Builder display(String key, String label, Widget.Display widget) {
+            return display(key, label, com.unbi.engine.core.type.Types.TEXT, widget);
+        }
+
+        /** The same, for a row whose value is not text — a boolean, or a list drawn as chips. */
+        public Builder display(String key, String label, PortType type, Widget.Display widget) {
+            return addInput(new NodeInput(key, label, type, false, false, widget, "", null));
+        }
+
+        /** A display row folded away with the rest of the detail. */
+        public Builder advancedDisplay(String key, String label, Widget.Display widget) {
+            return advancedDisplay(key, label, com.unbi.engine.core.type.Types.TEXT, widget);
+        }
+
+        public Builder advancedDisplay(String key, String label, PortType type, Widget.Display widget) {
+            return addInput(new NodeInput(key, label, type, false, false, widget, "", null, true));
+        }
+
         /** Moves the setting just declared into the advanced section. */
         public Builder advanced() {
             if (inputs.isEmpty() || lastDeclaredWasOutput) {
@@ -180,6 +208,22 @@ public record NodeDescriptor(
             return this;
         }
 
+        /**
+         * Puts every input declared after this call under one sub-heading, until the next call.
+         *
+         * <p>A positional mode rather than an argument on every factory, for the same reason
+         * {@link #hint} is: a node with four groups of settings would otherwise carry the group name
+         * on twenty lines, and the reader would have to diff those strings to see where one group
+         * ends. Declared in order, the grouping reads as the outline it is.
+         *
+         * <p>{@code section("")} ends grouping, so the ungrouped settings of a node can follow its
+         * grouped ones.
+         */
+        public Builder section(String name) {
+            this.section = name == null ? "" : name.trim();
+            return this;
+        }
+
         /** A button the editor offers on this node before anything is run. */
         public Builder action(NodeAction action) {
             actions.add(action);
@@ -187,7 +231,7 @@ public record NodeDescriptor(
         }
 
         private Builder addInput(NodeInput input) {
-            inputs.add(input);
+            inputs.add(section.isEmpty() ? input : input.withGroup(section));
             lastDeclaredWasOutput = false;
             return this;
         }

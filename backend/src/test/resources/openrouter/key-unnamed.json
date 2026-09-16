@@ -1,0 +1,28 @@
+{
+  "data": {
+    "label": "sk-or-v1-0ca...618",
+    "limit": null,
+    "limit_remaining": null,
+    "limit_reset": "monthly",
+    "usage": 0.08,
+    "usage_daily": 0.08,
+    "usage_weekly": 0.08,
+    "usage_monthly": 0.08,
+    "byok_usage": 0,
+    "is_free_tier": false,
+    "is_management_key": false,
+    "is_provisioning_key": false,
+    "include_byok_in_limit": true,
+    "expires_at": null,
+    "rate_limit": {
+      "requests": 20,
+      "interval": "10s",
+      "note": "deprecated"
+    },
+    "free_model_daily_requests": {
+      "used": 0,
+      "limit": 50,
+      "remaining": 50
+    }
+  }
+}

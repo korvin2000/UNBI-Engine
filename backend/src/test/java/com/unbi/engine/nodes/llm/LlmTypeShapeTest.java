@@ -7,6 +7,8 @@ import com.unbi.engine.nodes.files.FileTypes;
 import com.unbi.engine.nodes.files.model.FileEdit;
 import com.unbi.engine.nodes.files.model.FileRef;
 import com.unbi.engine.nodes.files.model.TextMatch;
+import com.unbi.engine.nodes.llm.model.LlmEndpointInfo;
+import com.unbi.engine.nodes.llm.model.LlmModelInfo;
 import com.unbi.engine.nodes.llm.model.LlmResult;
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
@@ -27,6 +29,78 @@ class LlmTypeShapeTest {
     @DisplayName("LlmResult declares exactly the fields its record carries, in the same order")
     void resultStructMatchesItsRecord() {
         assertThat(fieldsOf(LlmTypes.RESULT)).containsExactly(componentsOf(LlmResult.class));
+    }
+
+    @Test
+    @DisplayName("the info structs declare exactly the fields their records carry, in the same order")
+    void infoStructsMatchTheirRecords() {
+        assertThat(fieldsOf(LlmTypes.ENDPOINT_INFO)).containsExactly(componentsOf(LlmEndpointInfo.class));
+        assertThat(fieldsOf(LlmTypes.MODEL_INFO)).containsExactly(componentsOf(LlmModelInfo.class));
+    }
+
+    @Test
+    @DisplayName("every info field is a scalar, because a table cell is one line")
+    void infoStructsHoldNoNestedShapes() {
+        // The reason these records are flat. Preview and Generate Report reflect over components and
+        // lay them out as columns; a nested record renders as "LlmKeyUsage[daily=0.42, …]" inside
+        // one, which is a worse answer than the four columns it replaced.
+        for (var struct : java.util.List.of(LlmTypes.ENDPOINT_INFO, LlmTypes.MODEL_INFO)) {
+            assertThat(((PortType.Struct) struct).fields().values())
+                    .describedAs(struct.describe())
+                    .allSatisfy(field -> assertThat(field).isInstanceOf(PortType.Primitive.class));
+        }
+    }
+
+    @Test
+    @DisplayName("toString is the report rather than a record dump — the LlmResult precedent")
+    void infoRecordsRenderAsReports() {
+        var endpoint = new LlmEndpointInfo(
+                "OpenRouter", "https://openrouter.ai/api/v1", true, "2026-09-16T13:42:07Z", 443,
+                "dev key", 50, 37.66, 12.34, 0.42, false, 3, 200, 272, 311, 374, 360, 169,
+                "text, image, file");
+
+        // Every count on its own placeholder, and no placeholder left showing: a format string
+        // split across concatenated literals applies only to the last of them, silently.
+        assertThat(endpoint.toString())
+                .startsWith("OpenRouter — https://openrouter.ai/api/v1")
+                .contains("443 models served.")
+                .contains("272 with vision")
+                .contains("311 with reasoning")
+                .contains("374 with tools")
+                .contains("360 with structured output")
+                .contains("169 taking files")
+                .doesNotContain("%s")
+                .doesNotContain("LlmEndpointInfo[");
+
+        var model = new LlmModelInfo(
+                "vendor/model", "Vendor: Model", "vendor/model-2026", 262_144, 65_536, 0.1625, 1.3,
+                "$0.1625 in / $1.30 out per M", "tools, vision", "text, image", "text", 7,
+                "max_tokens", "2026-02-25", "", false, "", "Vendor/Model", "Qwen3", "", "A model.");
+
+        assertThat(model.toString())
+                .startsWith("Vendor: Model — vendor/model")
+                .contains("Context 262,144 tok")
+                .contains("$0.1625 in / $1.30 out per M")
+                .doesNotContain("%s")
+                .doesNotContain("LlmModelInfo[");
+    }
+
+    @Test
+    @DisplayName("an unquoted price leaves no price line, and a free one says free")
+    void aPriceThatWasNotPublishedStaysOut() {
+        // The two facts a Number field cannot tell apart, which is why the pair travels as text.
+        assertThat(priced("").toString()).doesNotContain("Priced at");
+        assertThat(priced("").summaryLine()).isEqualTo("vendor/model");
+        assertThat(priced("free in / free out per M").toString())
+                .contains("Priced at free in / free out per M.");
+        assertThat(priced("free in / free out per M").summaryLine())
+                .isEqualTo("vendor/model · free in / free out per M");
+    }
+
+    private static LlmModelInfo priced(String pricePerM) {
+        return new LlmModelInfo(
+                "vendor/model", "", "", 0, 0, 0, 0, pricePerM, "", "", "", 0, "", "", "", false,
+                "", "", "", "", "");
     }
 
     @Test

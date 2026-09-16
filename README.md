@@ -44,8 +44,12 @@ on the field opens a browser for the machine the *engine* runs on — set a sear
 | Drag from a port | connect — only compatible ports light up, and a wire takes its type's colour |
 | Right-click | node menu (rename, save as preset, collapse, switch off, duplicate, disconnect, delete) or canvas menu |
 | Double-click a node's title | give that instance a name of your own |
-| The **Advanced** strip in a node | the fine tuning, folded away; the badge says how much of it you have changed |
-| The 💡 in a node's header | ask the gateway whether this actually works, before running anything |
+| The chevron on a node's **Advanced** strip | folds the fine tuning out into the node itself; the badge says how much of it you have changed, and a closed strip lists what you changed as small chips |
+| The word **Advanced** itself, `Settings…` in the node menu, or the sliders button in the toolbar | the settings panel: one node's settings beside the canvas, with a label column, sub-sections, a filter past ten rows, and a footer that resets every change in one undoable step |
+| The three buttons in the panel's header | pin it to this node (otherwise it follows whatever you select) · float it over the canvas, or dock it back to the right edge · close it (`Esc` does too, unless it is pinned) |
+| The edge of the panel facing the canvas | drag to resize it. Narrow windows take over: under 1100px it overlays the right edge, under 640px it becomes a bottom sheet |
+| The grip in a node's bottom-right corner | drag to set that node's width (252–640px; it snaps to the default and to widths your other nodes already have, and resizes the whole selection at once). Double-click it, or `Reset width` in the node menu, for the default back. The panel's footer has the same width as a number field, and the width is saved with the workflow. Growing a node never pushes its neighbours aside |
+| The 💡 in a node's header | ask the gateway whether this actually works, before running anything — and on **Endpoint Info** / **Model Info**, fetch what the gateway publishes about itself or about the wired model: prices, ceilings, modalities, credit left. Those rows are readouts, not settings: they say *not fetched* until you press it, `—` where the gateway publishes nothing, and when they were read |
 | The ✎ beside **Endpoint** | the profile dialog: where a gateway lives and how to reach it, saved on the engine and referenced by name |
 | The ⤢ in the corner of a prompt box | a full-window editor, with file loading and a saved-prompt library |
 | The switch in a node's footer | leave that node, and everything downstream of it, out of the run |
@@ -74,7 +78,7 @@ backend/
   transport/       WebSocket handler, REST catalog, JSON codecs
 frontend/src/app/
   core/            type mirror, graph store + commands, catalog, presets, engine socket
-  editor/          canvas, palette, toolbar
+  editor/          canvas, palette, toolbar, the settings panel beside the canvas
   widgets/         the input controls a node can declare
 docs/ARCHITECTURE.md   the design, and why
 docs/LLM-NODES.md      the LLM pack, and why it is shaped that way
@@ -105,8 +109,8 @@ Add rows there first; one of the two suites will go red until both agree.
 ## Tests
 
 ```bash
-./gradlew :backend:test          # 365 tests
-npm --prefix frontend test       # 88 tests (through the Angular test builder — `vitest` alone lacks the JIT compiler)
+./gradlew :backend:test          # 433 tests
+npm --prefix frontend test       # 122 tests (through the Angular test builder — `vitest` alone lacks the JIT compiler)
 ```
 
 The backend suite includes an end-to-end test that boots the application, fetches the catalog over
@@ -138,6 +142,8 @@ unintended write costs a directory tree.
 |---|---|
 | **LLM Endpoint** | Names a saved endpoint *profile* — OpenRouter, llama.cpp, OmniRoute, OpenAI, Codex or any OpenAI-compatible gateway, with its URL, credential *name* and pacing kept on the engine. The bulb tests it. |
 | **LLM Model** | Picks a model from what the endpoint serves and declares its capabilities, reasoning, pricing and provider routing. The bulb fills the rest in from the endpoint. |
+| **Endpoint Info** | Reads what a gateway publishes about itself: models served, what they can do, credit left, today's usage. Reports only — nothing on it is a setting. |
+| **Model Info** | Reads what the gateway publishes about one model: ceilings, prices, modalities, and every host serving it with its quantization, price and uptime |
 | **Generation Params** | Sampling settings; anything left blank is not sent at all |
 | **Variables** | Names upstream values so a prompt template can read them |
 | **Prompt Template** | A prompt written once and filled in per run; save it as a preset to reuse it |
@@ -168,7 +174,7 @@ already wrote. `GET /api/options` returns credential *names* only; nothing serve
 
 ### Checking a configuration before you run it
 
-Three buttons, and each one answers a question that a run would otherwise answer expensively:
+Four buttons, and each one answers a question that a run would otherwise answer expensively:
 
 - **LLM Endpoint → 💡** — is the gateway reachable, and does its credential work? It probes whatever
   that gateway can actually be authenticated against, which is not always the model listing:
@@ -181,6 +187,10 @@ Three buttons, and each one answers a question that a run would otherwise answer
 - **LLM Request → 💡** — would this request be honoured? It runs the real capability check against
   the real model and confirms the model is still served, which is worth a second before a batch of
   four hundred.
+- **Endpoint Info / Model Info → 💡** — fetch, and keep the answer on the canvas. These two nodes
+  are all read and no settings: the rows they fill in are facts, drawn with a timestamp and
+  impossible to type into. A fetch writes *every* row, so a re-fetch against a different endpoint
+  clears what the last one said instead of leaving a stale figure looking current.
 
 Discovery also feeds the rest of the editor. Once a model declares its capabilities, the Response
 Format dropdown on **LLM Request** offers only the formats that model supports — with no button to

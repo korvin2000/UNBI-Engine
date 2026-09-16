@@ -1,0 +1,285 @@
+@if (view(); as view) {
+  <!--
+    The resize handle, on whichever edge faces the canvas: the left edge of a docked column, the
+    right edge of a floating card. Either way, dragging it toward the canvas makes the panel wider.
+  -->
+  @if (docked()) {
+    <div
+      class="grip grip--left"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the inspector"
+      (pointerdown)="startResize($event, 'left')"
+    ></div>
+  } @else {
+    <div
+      class="grip grip--right"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the inspector"
+      (pointerdown)="startResize($event, 'right')"
+    ></div>
+  }
+
+  <!-- The node's own header, moved: accent tint over a 2px accent rule, so the panel reads as the
+       node it is editing rather than as a different application. -->
+  <header class="head" (pointerdown)="startDrag($event)">
+    <app-icon class="head__icon" [name]="view.spec.icon" [size]="14" />
+    <span
+      class="head__title"
+      [class.head__title--named]="view.node.title"
+      [attr.title]="view.node.title ? view.node.title + ' — ' + view.spec.label : view.spec.label"
+      >{{ title() }}</span
+    >
+
+    <span class="head__tools">
+      <button
+        class="tool"
+        type="button"
+        [class.is-on]="pinned()"
+        [attr.aria-pressed]="pinned()"
+        [attr.title]="
+          pinned()
+            ? 'Unpin: follow whichever node is selected'
+            : 'Pin to this node, whatever is selected'
+        "
+        aria-label="Pin the inspector to this node"
+        (click)="togglePinned()"
+      >
+        <app-icon name="bookmark" [size]="12" [filled]="pinned()" />
+      </button>
+      <button
+        class="tool tool--dock"
+        type="button"
+        [attr.title]="docked() ? 'Float this panel over the canvas' : 'Dock it to the right edge'"
+        [attr.aria-label]="docked() ? 'Undock the inspector' : 'Dock the inspector'"
+        (click)="toggleDocked()"
+      >
+        <app-icon [name]="docked() ? 'expand' : 'select'" [size]="12" />
+      </button>
+      <button class="tool" type="button" title="Close (Esc)" aria-label="Close the inspector" (click)="close()">
+        <app-icon name="close" [size]="12" [weight]="2.2" />
+      </button>
+    </span>
+  </header>
+
+  @if (selectionCount() > 1) {
+    <!-- Said rather than guessed at: with several nodes selected the panel keeps showing the last
+         single one, and a panel that silently disagrees with the canvas is worse than a line. -->
+    <p class="note">{{ selectionCount() }} nodes selected — still showing this one</p>
+  }
+
+  <!-- Past ten rows a form is searched rather than read — and whenever a filter is actually in
+       force, whatever the row count, so the control that clears it is never off screen. -->
+  @if (filterable() || filtering()) {
+    <div class="tools">
+      <label class="tools__search">
+        <app-icon name="search" [size]="12" />
+        <input
+          type="search"
+          placeholder="Filter settings…"
+          [value]="query()"
+          (input)="onQuery($event)"
+          aria-label="Filter these settings by name"
+        />
+      </label>
+      <button
+        class="tools__only"
+        type="button"
+        [class.is-on]="modifiedOnly()"
+        [attr.aria-pressed]="modifiedOnly()"
+        title="Show only settings that are no longer at their default"
+        (click)="toggleModifiedOnly()"
+      >
+        Modified only
+      </button>
+    </div>
+  }
+
+  <div class="body">
+    @if (isEmpty()) {
+      <p class="empty">This node has nothing to set — everything it needs arrives through its ports.</p>
+    }
+
+    @for (section of sections(); track section.id) {
+      <section class="part">
+        <button
+          class="part__head"
+          type="button"
+          [attr.aria-expanded]="section.open"
+          (click)="toggleSection(section)"
+        >
+          <app-icon class="chevron" [class.is-open]="section.open" name="chevron" [size]="11" />
+          <span class="part__label">{{ section.label }}</span>
+          @if (section.changed > 0) {
+            <span class="part__changed" title="Settings here are no longer at their default">
+              {{ section.changed }} changed
+            </span>
+          }
+          <span class="part__count">{{ section.total }}</span>
+        </button>
+
+        @if (section.open) {
+          <div class="part__body">
+            @for (group of section.groups; track group.name) {
+              @if (group.name) {
+                <!-- A sub-section the node author named. Ungrouped rows come first and have no
+                     header, so a node that names no groups looks exactly as it did. -->
+                <button
+                  class="group__head"
+                  type="button"
+                  [attr.aria-expanded]="group.open"
+                  (click)="toggleGroup(section, group)"
+                >
+                  <app-icon class="chevron" [class.is-open]="group.open" name="chevron" [size]="10" />
+                  <span class="group__label">{{ group.name }}</span>
+                  <span class="part__count">{{ group.rows.length }}</span>
+                </button>
+              }
+
+              @if (!group.name || group.open) {
+                <div class="group__body">
+                  @for (row of group.rows; track row.setting.spec.key) {
+                    @let setting = row.setting;
+                    <div
+                      class="row"
+                      [class]="row.colourClass"
+                      [class.row--tall]="row.tall"
+                      [class.row--switch]="row.switchRow"
+                      [class.row--readout]="row.readout"
+                      [class.is-changed]="setting.isChanged"
+                    >
+                      @if (!row.readout) {
+                        <!--
+                          A readout has no head: the widget draws the name and the value as one
+                          two-column line, so a label above it would say the name twice — and there
+                          is nothing here to reset, because what a gateway published is not ours to
+                          write.
+                        -->
+                        <div class="row__head">
+                          @if (setting.isChanged) {
+                            <span class="row__dot" title="No longer at its default"></span>
+                          }
+                          <!-- The label first in the tooltip, then the key: an explicit title
+                               replaces the browser's own overflow tooltip, so a truncated label
+                               would otherwise be unreadable by hovering it. -->
+                          <span
+                            class="row__label"
+                            [attr.title]="setting.spec.label + ' — ' + setting.spec.key"
+                          >
+                            {{ setting.spec.label }}
+                          </span>
+                          @if (setting.spec.hint) {
+                            <app-icon
+                              class="row__hint"
+                              name="help"
+                              [size]="11"
+                              [attr.title]="setting.spec.hint"
+                            />
+                          }
+                          @if (setting.wired) {
+                            <span class="row__driven" title="Driven by the connected edge">wired</span>
+                          }
+                          @if (setting.isChanged) {
+                            <button
+                              class="row__reset"
+                              type="button"
+                              [attr.title]="'Put ' + setting.spec.label + ' back to its default — Ctrl+Z undoes it'"
+                              [attr.aria-label]="'Reset ' + setting.spec.label"
+                              (click)="reset(row)"
+                            >
+                              <app-icon name="undo" [size]="11" />
+                            </button>
+                          }
+                        </div>
+                      }
+
+                      <div class="row__control">
+                        <!-- `fixed` because this body scrolls: an absolutely positioned list would
+                             be clipped by it — see ListPlacement. -->
+                        <app-node-widget
+                          [spec]="setting.spec.widget!"
+                          [value]="setting.value"
+                          [disabled]="setting.widgetDisabled"
+                          [label]="setting.spec.label"
+                          [hint]="row.readout ? (setting.spec.hint ?? '') : ''"
+                          [discovered]="setting.discovered"
+                          [discoveryNote]="setting.discoveryNote"
+                          [allowed]="setting.allowed"
+                          [listPlacement]="'fixed'"
+                          (valueChange)="setValue(row, $event)"
+                          (opened)="onOpened(setting.automatic)"
+                        />
+                      </div>
+                    </div>
+                  }
+                </div>
+              }
+            }
+
+            @if (section.groups.length === 0) {
+              <p class="part__hidden">Nothing here matches.</p>
+            } @else if (section.hidden > 0) {
+              <p class="part__hidden">{{ section.hidden }} hidden by the filter</p>
+            }
+          </div>
+        }
+      </section>
+    }
+  </div>
+
+  <footer class="foot">
+    @if (changed() > 0) {
+      <span class="foot__changed">{{ changed() }} changed</span>
+      <button
+        class="foot__reset"
+        type="button"
+        title="Put every changed setting on this node back to its default — one press of Ctrl+Z undoes all of it"
+        (click)="resetAll()"
+      >
+        <app-icon name="undo" [size]="11" />
+        Reset {{ changed() }} {{ changed() === 1 ? 'change' : 'changes' }}
+      </button>
+    } @else if (hasSettings()) {
+      <span class="foot__quiet">Every setting at its default</span>
+    } @else {
+      <!-- An info node has no settings at all, so "every setting at its default" would be a claim
+           about something that is not there. -->
+      <span class="foot__quiet">Readouts only — nothing here to set</span>
+    }
+
+    <span class="foot__spacer"></span>
+
+    <!--
+      The node's own geometry, and the accessible route to it: the grip in the node's footer is a
+      pointer drag, which a keyboard cannot perform. Typed here, stepped by the arrow keys, and
+      reset to "no opinion" rather than to the number 252 — so a later change to the default width
+      still reaches the node.
+    -->
+    <label class="width">
+      <span class="width__label">Node width</span>
+      <input
+        class="width__input"
+        type="number"
+        [attr.min]="MIN_WIDTH"
+        [attr.max]="MAX_WIDTH"
+        [attr.step]="WIDTH_STEP"
+        [value]="nodeWidth()"
+        (change)="onWidth($event)"
+        aria-label="This node's width in pixels"
+      />
+      <span class="width__unit">px</span>
+    </label>
+    @if (hasWidth()) {
+      <button
+        class="width__reset"
+        type="button"
+        title="Back to the default width — Ctrl+Z undoes it"
+        aria-label="Reset this node's width"
+        (click)="resetWidth()"
+      >
+        <app-icon name="undo" [size]="11" />
+      </button>
+    }
+  </footer>
+}

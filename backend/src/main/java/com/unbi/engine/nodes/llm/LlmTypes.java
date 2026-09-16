@@ -47,6 +47,59 @@ public final class LlmTypes {
             "latencyMillis", Types.NUMBER,
             "sources", Types.TEXT));
 
+    /**
+     * What a gateway said about itself.
+     *
+     * <p>A struct rather than a handle, for the opposite reason the handles are opaque: the point of
+     * an info node is that its answer is <em>data</em> — something to preview, tabulate, save beside
+     * a batch's results and compare against last week's. Every field is scalar so that a list of
+     * these lays out as a table with no cell holding a record dump.
+     */
+    public static final PortType ENDPOINT_INFO = Types.struct("LlmEndpointInfo", Types.fields(
+            "gateway", Types.TEXT,
+            "baseUrl", Types.TEXT,
+            "reachable", Types.BOOLEAN,
+            "fetchedAt", Types.TEXT,
+            "modelsServed", Types.NUMBER,
+            "keyLabel", Types.TEXT,
+            "creditLimit", Types.NUMBER,
+            "creditsRemaining", Types.NUMBER,
+            "usageTotal", Types.NUMBER,
+            "usageToday", Types.NUMBER,
+            "freeTier", Types.BOOLEAN,
+            "freeRequestsUsed", Types.NUMBER,
+            "freeRequestsLimit", Types.NUMBER,
+            "modelsWithVision", Types.NUMBER,
+            "modelsWithReasoning", Types.NUMBER,
+            "modelsWithTools", Types.NUMBER,
+            "modelsWithStructuredOutput", Types.NUMBER,
+            "modelsWithFileInput", Types.NUMBER,
+            "inputModalitiesCsv", Types.TEXT));
+
+    /** What a gateway said about one model. Flat and scalar for the same reason. */
+    public static final PortType MODEL_INFO = Types.struct("LlmModelInfo", Types.fields(
+            "id", Types.TEXT,
+            "name", Types.TEXT,
+            "canonicalSlug", Types.TEXT,
+            "contextWindow", Types.NUMBER,
+            "maxOutputTokens", Types.NUMBER,
+            "inputPer1M", Types.NUMBER,
+            "outputPer1M", Types.NUMBER,
+            "pricePerM", Types.TEXT,
+            "capabilitiesCsv", Types.TEXT,
+            "inputModalitiesCsv", Types.TEXT,
+            "outputModalitiesCsv", Types.TEXT,
+            "providerCount", Types.NUMBER,
+            "parametersCsv", Types.TEXT,
+            "released", Types.TEXT,
+            "knowledgeCutoff", Types.TEXT,
+            "moderated", Types.BOOLEAN,
+            "aliasOf", Types.TEXT,
+            "huggingFaceId", Types.TEXT,
+            "tokenizer", Types.TEXT,
+            "pricingNote", Types.TEXT,
+            "description", Types.TEXT));
+
     public static final PortType ATTACHMENT_LIST = PortType.list(ATTACHMENT);
     public static final PortType RESULT_LIST = PortType.list(RESULT);
     public static final PortType TEXT_LIST = PortType.list(Types.TEXT);

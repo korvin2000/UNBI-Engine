@@ -1,4 +1,4 @@
-import { Point, WorkflowDoc, WorkflowEdge, WorkflowNode } from './workflow.models';
+import { Point, WorkflowDoc, WorkflowEdge, WorkflowNode, clampNodeWidth } from './workflow.models';
 
 /**
  * Every change to the document, as a value.
@@ -107,6 +107,39 @@ export function moveNodes(positions: ReadonlyMap<string, Point>): Command {
       nodes: doc.nodes.map((node) => {
         const moved = positions.get(node.id);
         return moved ? { ...node, position: moved } : node;
+      }),
+    }),
+  };
+}
+
+/**
+ * Sets, or clears, the drawn width of one or more nodes.
+ *
+ * `undefined` is "back to the default" rather than "252": the node then has no opinion about its
+ * width, so a later change to `--node-width` reaches it. One command for the whole selection,
+ * because resizing four selected nodes together should be one press of undo.
+ *
+ * Nodes already at the asked-for width are returned untouched, which is what lets the store's
+ * identity check see a drag that ended where it started as the no-op it is.
+ */
+export function resizeNodes(nodeIds: readonly string[], width: number | undefined): Command {
+  const wanted = new Set(nodeIds);
+  const settled = width === undefined ? undefined : clampNodeWidth(width);
+  return {
+    label: wanted.size === 1 ? 'Resize node' : `Resize ${wanted.size} nodes`,
+    apply: (doc) => ({
+      ...doc,
+      nodes: doc.nodes.map((node) => {
+        if (!wanted.has(node.id) || node.width === settled) {
+          return node;
+        }
+        if (settled === undefined) {
+          // Deleted rather than set to undefined, so a saved file carries no empty key and a
+          // node with no opinion about its width is indistinguishable from one that never had one.
+          const { width: _cleared, ...rest } = node;
+          return rest;
+        }
+        return { ...node, width: settled };
       }),
     }),
   };

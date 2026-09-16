@@ -20,6 +20,11 @@ import com.unbi.engine.core.type.PortType;
  *                    box above a response format of "Text" is not merely wasted height, it is a
  *                    question with no right answer — and every one of those a node asks is a reason
  *                    to distrust the ones that matter.
+ * @param group       a sub-heading this input belongs under, blank for none. Presentation only: the
+ *                    inspector panel draws the groups as sub-sections and the node body ignores
+ *                    them, because twenty settings in one list is a list nobody reads even when
+ *                    every one of them is folded away. Declared here rather than derived from key
+ *                    prefixes, so renaming a setting cannot silently move it.
  */
 public record NodeInput(
         String key,
@@ -31,15 +36,24 @@ public record NodeInput(
         Object defaultValue,
         String hint,
         boolean advanced,
-        ShowWhen showWhen) {
+        ShowWhen showWhen,
+        String group) {
 
     public NodeInput {
         if (key == null || key.isBlank()) {
             throw new IllegalArgumentException("Input key must not be blank");
         }
+        group = group == null ? "" : group.trim();
         if (!connectable && widget == null) {
             throw new IllegalArgumentException(
                     "Input '" + key + "' can neither be connected nor edited, so it can never receive a value");
+        }
+        if (widget instanceof Widget.Display && (connectable || required)) {
+            // A display is something the engine found out, not something anyone can supply. A port
+            // into it would offer to overwrite a fact, and "required" would make a node invalid
+            // until a gateway had been asked — which is a probe, not a graph.
+            throw new IllegalArgumentException(
+                    "Input '" + key + "' displays a discovered fact, so it can be neither connectable nor required");
         }
         if (showWhen != null && connectable) {
             // Same reason as below: a port that is not on screen loses its geometry.
@@ -64,7 +78,7 @@ public record NodeInput(
             Widget widget,
             Object defaultValue,
             String hint) {
-        this(key, label, type, required, connectable, widget, defaultValue, hint, false, null);
+        this(key, label, type, required, connectable, widget, defaultValue, hint, false, null, "");
     }
 
     public NodeInput(
@@ -77,7 +91,21 @@ public record NodeInput(
             Object defaultValue,
             String hint,
             boolean advanced) {
-        this(key, label, type, required, connectable, widget, defaultValue, hint, advanced, null);
+        this(key, label, type, required, connectable, widget, defaultValue, hint, advanced, null, "");
+    }
+
+    public NodeInput(
+            String key,
+            String label,
+            PortType type,
+            boolean required,
+            boolean connectable,
+            Widget widget,
+            Object defaultValue,
+            String hint,
+            boolean advanced,
+            ShowWhen showWhen) {
+        this(key, label, type, required, connectable, widget, defaultValue, hint, advanced, showWhen, "");
     }
 
     public boolean hasWidget() {
@@ -86,17 +114,25 @@ public record NodeInput(
 
     public NodeInput withHint(String replacement) {
         return new NodeInput(
-                key, label, type, required, connectable, widget, defaultValue, replacement, advanced, showWhen);
+                key, label, type, required, connectable, widget, defaultValue, replacement, advanced,
+                showWhen, group);
     }
 
     public NodeInput asAdvanced() {
         return new NodeInput(
-                key, label, type, required, connectable, widget, defaultValue, hint, true, showWhen);
+                key, label, type, required, connectable, widget, defaultValue, hint, true, showWhen, group);
     }
 
     public NodeInput shownWhen(ShowWhen condition) {
         return new NodeInput(
-                key, label, type, required, connectable, widget, defaultValue, hint, advanced, condition);
+                key, label, type, required, connectable, widget, defaultValue, hint, advanced, condition, group);
+    }
+
+    /** The same input under a sub-heading. Blank removes it. */
+    public NodeInput withGroup(String replacement) {
+        return new NodeInput(
+                key, label, type, required, connectable, widget, defaultValue, hint, advanced, showWhen,
+                replacement);
     }
 
     /**

@@ -81,6 +81,7 @@ public class LlmModelNode implements NodeDefinition, NodeProbe {
                 .hint("Leave it empty for no limit at all — nothing is then sent, and the model "
                         + "writes as much as it is willing to. A number caps every request through "
                         + "this model, however much one of them asks for.")
+                .section("Output limits")
                 .advancedSetting("maxTokensParam", "Output Limit Field", Types.TEXT, Widget.Dropdown.of(
                         "auto", "Automatic",
                         "max_tokens", "max_tokens",
@@ -91,6 +92,7 @@ public class LlmModelNode implements NodeDefinition, NodeProbe {
                         + "follows. Only override it for one that does not.")
                 .advancedSetting("contextWindow", "Context Window", Types.NUMBER,
                         new Widget.NumberField(1024, 4_000_000, 1024, "tok", false), 128_000d)
+                .section("Protocol")
                 .advancedSetting("apiFormat", "API Format", Types.TEXT, Widget.Dropdown.of(
                         "profile", "From gateway",
                         "chat_completions", "Chat Completions",
@@ -113,10 +115,12 @@ public class LlmModelNode implements NodeDefinition, NodeProbe {
                         "hosted", "Hosted search model",
                         "online", "Online suffix",
                         "plugin", "Web plugin"), "none")
+                .section("Cost")
                 .advancedSetting("inputPer1M", "Input Price", Types.NUMBER,
                         new Widget.NumberField(0, 1000, 0.01, "$/M", false), 0d)
                 .advancedSetting("outputPer1M", "Output Price", Types.NUMBER,
                         new Widget.NumberField(0, 1000, 0.01, "$/M", false), 0d)
+                .section("Routing")
                 .advancedSetting("providerOrder", "Provider Order", Types.TEXT,
                         Widget.TextField.of("deepinfra/fp8, together, …"), "")
                 .hint("One model id can be served by many hosts whose sampler support differs.")
@@ -125,9 +129,11 @@ public class LlmModelNode implements NodeDefinition, NodeProbe {
                 .hint("Turns a silently dropped sampler into an error. Worth it for any call "
                         + "carrying more than a temperature.")
                 .advancedSetting("tags", "Tags", Types.TEXT, Widget.TextField.of("fast, cheap, german"), "")
+                .section("Escape hatch")
                 .advancedSetting("extraBody", "Extra Request Body", Types.TEXT,
                         Widget.TextField.code("{ }", 4).withEditor(), "")
                 .hint("JSON spread onto every request, for anything this node has no field for.")
+                .section("")
                 .out("model", "Model", LlmTypes.MODEL)
                 .build();
     }

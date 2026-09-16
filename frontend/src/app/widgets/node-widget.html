@@ -6,7 +6,22 @@
   searched, scrolled, capped and picked from.
 -->
 <ng-template #listPanel>
-  <div class="select__panel">
+  @let pinned = fixedPanel();
+
+  <!--
+    One panel, placed one of two ways. Inline it hangs off `.select`; pinned it is measured off the
+    trigger and fixed to the viewport, which is the only way out of a host that scrolls — see
+    `ListPlacement`.
+  -->
+  <div
+    class="select__panel"
+    [class.select__panel--fixed]="pinned"
+    [style.left.px]="pinned?.left ?? null"
+    [style.width.px]="pinned?.width ?? null"
+    [style.top.px]="pinned?.top ?? null"
+    [style.bottom.px]="pinned?.bottom ?? null"
+    [style.max-height.px]="pinned?.maxHeight ?? null"
+  >
     @if (searchable() && !comboBox()) {
       <!-- One gateway answers a model listing with over a thousand entries. A list that long is
            not read, it is searched — so past a dozen options it grows a filter. -->
@@ -18,7 +33,6 @@
           placeholder="Filter…"
           [value]="listQuery()"
           (input)="onListSearch($event)"
-          (keydown.escape)="closeList()"
           aria-label="Filter the options"
         />
       </div>
@@ -179,11 +193,12 @@
       @if (widget.unit && numberText()) {
         <span class="unit">{{ widget.unit }}</span>
       }
-      @if (widget.optional && !numberText()) {
-        <!-- An empty optional field is a value, not a gap. Naming it is what makes "no limit"
-             something a user dares to leave. -->
-        <span class="unit unit--blank">{{ widget.blankLabel }}</span>
-      }
+      <!--
+        An empty optional field is a value, not a gap, and the placeholder above is what names it —
+        "no limit" rather than nothing. There used to be a second, italic copy of the same word
+        floated to the right of the box; in a full-width field the two merely read as a repetition,
+        and beside a label they overlap.
+      -->
       <div class="spinner__buttons">
         <button
           type="button"
@@ -257,7 +272,7 @@
       palette, so on this canvas it arrives as a bright white sheet that belongs to no part of the
       app. This one is also the only way to show the selected option in the node's own type colours.
     -->
-    <div class="select" fDragBlocker>
+    <div class="select" #listTrigger fDragBlocker>
       @if (widget.allowCustom) {
         <!--
           A combo box: one box that is typed into and picked from. The list can never be complete —
@@ -320,7 +335,7 @@
       opens the dialog where profiles are made, tested and edited — the fields it draws are the
       engine's, so this widget knows nothing about what a profile contains.
     -->
-    <div class="select profile" fDragBlocker>
+    <div class="select profile" #listTrigger fDragBlocker>
       <button
         class="field select__button"
         type="button"
@@ -353,7 +368,7 @@
 
   @case ('credential') {
     <!-- The name of a secret. Names come from the engine; a new one can be added from the list. -->
-    <div class="select" fDragBlocker>
+    <div class="select" #listTrigger fDragBlocker>
       <button
         class="field select__button"
         type="button"
@@ -536,5 +551,141 @@
         <app-icon name="folder-open" [size]="13" />
       </button>
     </div>
+  }
+
+  @case ('display') {
+    <!--
+      A readout: what a fetch or a run produced. It draws its own label, because a fact is a
+      two-column line — name left, value right — rather than a control under a caption, and a node
+      that reports twenty facts would otherwise be forty rows tall.
+
+      The three shapes are the three shapes the things a node reports actually are: a fact, a
+      paragraph, and a set. The label markup is shared, so all three read as one column.
+    -->
+    @let state = readoutState();
+
+    <!-- The label, and everything that is the same whatever the value looks like. -->
+    <ng-template #factLabel>
+      <span class="fact__label" [attr.title]="label()">
+        <span class="fact__name">{{ label() }}</span>
+        @if (hint()) {
+          <!-- A readout has no row above it to hang an explanation on, so the question mark
+               arrives here or it is unreachable. -->
+          <app-icon class="fact__hint" name="help" [size]="11" [attr.title]="hint()" />
+        }
+      </span>
+    </ng-template>
+
+    <!-- What a row says when there is nothing in it: unasked and unpublished are different
+         answers, and collapsing them would make a node nobody fetched look like a gateway that
+         publishes nothing. -->
+    <ng-template #factBlank>
+      @if (state === 'unfetched') {
+        <span class="fact__pending" title="Nothing fetched yet — press the bulb in the node's header">
+          not fetched
+        </span>
+      } @else {
+        <span class="fact__blank" title="not published by this gateway">—</span>
+      }
+    </ng-template>
+
+    @switch (readoutStyle()) {
+      @case ('chips') {
+        <div class="fact fact--chips">
+          <ng-container *ngTemplateOutlet="factLabel" />
+          @if (state === 'value') {
+            <!-- The multi-select chip's shape with every interaction taken out: these say what the
+                 gateway listed, they are not a set anybody picks from. -->
+            <div class="fact__chips">
+              @for (entry of readoutChips(); track entry) {
+                <span class="chip chip--fact is-on">{{ entry }}</span>
+              }
+            </div>
+          } @else {
+            <ng-container *ngTemplateOutlet="factBlank" />
+          }
+        </div>
+      }
+
+      @case ('block') {
+        <div class="fact fact--block">
+          <ng-container *ngTemplateOutlet="factLabel" />
+          @if (state === 'value') {
+            <div class="fact__prose" [class.is-clamped]="readoutClamped()">{{ readoutText() }}</div>
+            @if (readoutClamped()) {
+              <!-- The same full-window editor a prompt is written in, read-only. One place in this
+                   editor where a long text is looked at, rather than a second viewer to keep
+                   consistent with it. -->
+              <button class="fact__more" type="button" (click)="showAll()" fDragBlocker>Show all</button>
+            }
+          } @else {
+            <ng-container *ngTemplateOutlet="factBlank" />
+          }
+        </div>
+      }
+
+      @default {
+        <div class="fact fact--line">
+          <ng-container *ngTemplateOutlet="factLabel" />
+
+          @if (state === 'value') {
+            <!-- Selectable, and with a copy button on approach: a model id or a canonical slug is
+                 a thing people paste somewhere else, and selecting text inside a node on a
+                 transformed canvas is fiddly enough that "select it by hand" is not an answer. -->
+            <span class="fact__value" #factValue [attr.title]="readoutTitle()" fDragBlocker>
+              @if (readoutFlag() !== null) {
+                <!-- A boolean is a glyph, in the same two colours the footer uses for the same
+                     two answers: a row reading "Reachable  true" makes the eye read a word where
+                     a tick would do. -->
+                <app-icon
+                  class="fact__flag"
+                  [class.fact__flag--ok]="readoutFlag()"
+                  [class.fact__flag--problem]="!readoutFlag()"
+                  [name]="readoutFlag() ? 'check' : 'close'"
+                  [size]="12"
+                  [weight]="2.6"
+                />
+              } @else {
+                <span class="fact__text">{{ readoutLine() }}</span>
+                @if (readoutUnit()) {
+                  <span class="fact__unit">{{ readoutUnit() }}</span>
+                }
+              }
+            </span>
+            @if (readoutFlag() === null) {
+              <!-- In the tab order, unlike the node's width grip: copying a model id is a thing a
+                   keyboard user has to be able to do, and selecting the text by hand is what
+                   `copyValue()` exists to avoid. Revealed on focus by the stylesheet. -->
+              <button
+                class="fact__copy"
+                type="button"
+                [class.is-done]="copied()"
+                [class.is-blocked]="copyBlocked()"
+                [attr.title]="copyTitle()"
+                [attr.aria-label]="'Copy ' + label()"
+                (click)="copyValue()"
+                fDragBlocker
+              >
+                <app-icon [name]="copied() ? 'check' : 'copy'" [size]="10" [weight]="2.4" />
+              </button>
+            }
+          } @else {
+            <ng-container *ngTemplateOutlet="factBlank" />
+          }
+        </div>
+      }
+    }
+  }
+
+  @default {
+    <!--
+      A kind this build cannot draw — a node pack newer than the editor. Said quietly but said: an
+      unreachable setting that renders as nothing is indistinguishable from a setting that is not
+      there, which is how a run ends up behaving in a way nothing on screen explains.
+    -->
+    <p class="unsupported" [attr.title]="'This build of the editor has no control for ' + declaredKind()">
+      <app-icon name="warning" [size]="11" />
+      unsupported control: {{ declaredKind() }}
+    </p>
   }
 }

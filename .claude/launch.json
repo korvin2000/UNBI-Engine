@@ -4,8 +4,22 @@
     {
       "name": "unbi-frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "run", "start"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontend",
+        "run",
+        "start"
+      ],
       "port": 4200
+    },
+    {
+      "name": "unbi-backend",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd /d C:/work.ai/UNBI-Engine && set JAVA_HOME=C:/work.ai/UNBI-Engine/tools/jdk-26.0.2.1+1&& call C:/work.ai/UNBI-Engine/gradlew.bat :backend:bootRun --offline"
+      ],
+      "port": 8081
     }
   ]
 }

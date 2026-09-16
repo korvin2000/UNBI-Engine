@@ -15,6 +15,15 @@ export interface TextEditRequest {
   readonly library: string;
   /** Which value inside those presets holds the text. */
   readonly libraryKey: string;
+  /**
+   * Open as a viewer: the text can be read, selected and copied, but not written.
+   *
+   * There is one place in this editor where a long piece of text is looked at, and a readout that
+   * a gateway published — a model's description, a table of providers — is looked at in exactly
+   * the same way as a prompt is written in. A second, read-only viewer would be a second thing to
+   * keep consistent with this one; the flag drops the three controls that write instead.
+   */
+  readonly readOnly?: boolean;
 }
 
 /**

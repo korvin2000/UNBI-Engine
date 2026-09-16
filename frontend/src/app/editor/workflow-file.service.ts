@@ -1,7 +1,12 @@
 import { Injectable, inject } from '@angular/core';
 import { CatalogService } from '../core/catalog/catalog.service';
 import { GraphStore } from '../core/graph/graph-store';
-import { WorkflowDoc, WorkflowEdge, WorkflowNode } from '../core/graph/workflow.models';
+import {
+  WorkflowDoc,
+  WorkflowEdge,
+  WorkflowNode,
+  clampNodeWidth,
+} from '../core/graph/workflow.models';
 
 /** The on-disk format. Versioned from the first release so a later change has something to migrate from. */
 interface WorkflowFile {
@@ -23,14 +28,7 @@ export class WorkflowFileService {
   private readonly catalog = inject(CatalogService);
 
   save(): void {
-    const doc = this.graph.doc();
-    const file: WorkflowFile = {
-      format: 'unbi-workflow',
-      version: 1,
-      nodes: doc.nodes,
-      edges: doc.edges,
-    };
-    const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' });
+    const blob = new Blob([serialiseWorkflow(this.graph.doc())], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -125,6 +123,24 @@ export class WorkflowFileService {
   }
 }
 
+/**
+ * The document as the file on disk.
+ *
+ * A function rather than four lines inside `save`, so the round trip that matters — save, reopen,
+ * get the same graph back, width and all — can be stated as one test instead of through a download
+ * and a file picker. `JSON.stringify` drops an absent `width` on its own, which is what keeps a
+ * node that never expressed an opinion about its width from acquiring one in the file.
+ */
+export function serialiseWorkflow(doc: WorkflowDoc): string {
+  const file: WorkflowFile = {
+    format: 'unbi-workflow',
+    version: 1,
+    nodes: doc.nodes,
+    edges: doc.edges,
+  };
+  return JSON.stringify(file, null, 2);
+}
+
 /** Validates enough of an opened file that a malformed one fails here rather than mid-render. */
 export function parseWorkflow(text: string): WorkflowDoc {
   const parsed: unknown = JSON.parse(text);
@@ -154,6 +170,9 @@ export function parseWorkflow(text: string): WorkflowDoc {
         title: typeof node.title === 'string' ? node.title : '',
         collapsed: node.collapsed === true,
         disabled: node.disabled === true,
+        // Whitelisted like every other field: a width left out here would be dropped silently on
+        // reopen, which is the one failure mode a saved layout must not have.
+        width: parseWidth(node.width),
       };
     }),
     edges: file.edges.map((edge, index) => {
@@ -169,4 +188,16 @@ export function parseWorkflow(text: string): WorkflowDoc {
       };
     }),
   };
+}
+
+/**
+ * A saved width, or nothing.
+ *
+ * Absent, null, a string, `NaN` and `Infinity` all mean "this file says nothing about the width" —
+ * which is a node at the default rather than a node 0px wide. Anything else is clamped, because a
+ * hand-edited 4000 would produce a node that cannot be dragged back into view.
+ */
+function parseWidth(raw: unknown): number | undefined {
+  const width = typeof raw === 'number' ? raw : Number.NaN;
+  return Number.isFinite(width) ? clampNodeWidth(width) : undefined;
 }

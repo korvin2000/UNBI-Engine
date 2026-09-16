@@ -133,6 +133,38 @@ describe('widget parsing', () => {
     expect(widgetOf(null)).toBeNull();
     expect(widgetOf(undefined)).toBeNull();
   });
+
+  /**
+   * Every kind the editor can draw has its own arm.
+   *
+   * There used to be a `default` that returned the raw object, which meant a kind with nothing to
+   * default — a toggle, a folder picker — was never actually parsed, and a `file` widget arrived
+   * with `extensions: undefined`. Now that the default arm is a visible "unsupported" placeholder,
+   * a missing arm is a control the user cannot reach, so this enumerates the lot.
+   */
+  it('parses every kind it can draw, rather than leaving any to the fallback', () => {
+    expect(widgetOf({ kind: 'toggle' })).toEqual({ kind: 'toggle' });
+    expect(widgetOf({ kind: 'slider', min: 0, max: 2, step: 0.1 }))
+      .toEqual({ kind: 'slider', min: 0, max: 2, step: 0.1 });
+    expect(widgetOf({ kind: 'directory' })).toEqual({ kind: 'directory' });
+    expect(widgetOf({ kind: 'file', extensions: ['md'] }))
+      .toEqual({ kind: 'file', extensions: ['md'] });
+    expect(widgetOf({ kind: 'file' })).toEqual({ kind: 'file', extensions: [] });
+  });
+
+  it('carries a readout through, for the row model to mark as not editable', () => {
+    expect(widgetOf({ kind: 'display', style: 'chips', unit: 'tok' }))
+      .toEqual({ kind: 'display', style: 'chips', unit: 'tok' });
+    // An unnamed style is a line, which is the shape that cannot look broken.
+    expect(widgetOf({ kind: 'display' })).toEqual({ kind: 'display', style: 'line', unit: '' });
+  });
+
+  it('names a kind this build has never heard of instead of pretending it is one', () => {
+    // Kept and named: a control that renders as nothing is indistinguishable from a setting the
+    // node does not have, which is how a run ends up behaving in a way the screen cannot explain.
+    expect(widgetOf({ kind: 'hologram' })).toEqual({ kind: 'unsupported', declared: 'hologram' });
+    expect(widgetOf({})).toEqual({ kind: 'unsupported', declared: '' });
+  });
 });
 
 /**

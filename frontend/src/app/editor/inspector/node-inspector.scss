@@ -1,0 +1,683 @@
+// The inspector.
+//
+// Same grammar as a node — accent header, 2px accent rule, sunken body of lighter blocks, footer —
+// at panel scale. That is deliberate: the panel edits one node, and a second visual language for
+// the same job would read as a second application.
+//
+// One rule to keep in mind while editing this file: no `transform`, `filter` or `backdrop-filter`
+// on the host. Any of them would make this element the containing block for the `position: fixed`
+// dropdown panels the rows open, and every list would land in the wrong place.
+
+:host {
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--node-sunken);
+  color: var(--text);
+  font-size: 12.5px;
+  user-select: none;
+}
+
+:host(.is-open) {
+  display: flex;
+}
+
+// --- Docked: a column at the right edge, the canvas flexes beside it --------
+:host(.is-docked) {
+  position: relative;
+  flex: none;
+  width: var(--inspector-width, 320px);
+  border-left: 1px solid var(--border);
+}
+
+// --- Floating: a card over the canvas, dragged by its header ---------------
+:host(.is-floating) {
+  position: absolute;
+  left: var(--inspector-x, 96px);
+  top: var(--inspector-y, 72px);
+  width: var(--inspector-width, 320px);
+  max-height: calc(100% - 24px);
+  border: 1px solid var(--node-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-dialog);
+  z-index: 30;
+  overflow: hidden;
+}
+
+// --- The resize grips ------------------------------------------------------
+// A 6px strip on the edge that faces the canvas, invisible until approached — a visible bar would
+// be a third border on a panel that already has two.
+.grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 2;
+  cursor: ew-resize;
+  touch-action: none;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0 2px;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity var(--tempo) var(--ease);
+  }
+
+  &:hover::after {
+    opacity: 0.55;
+  }
+}
+
+// Inside the panel's own edge, not straddling it: a floating card clips its corners with
+// `overflow: hidden`, and clipped pixels are not hit-testable — a grip hanging 3px outside was
+// invisible to the pointer, so the drag went to the canvas behind it and panned the graph. The
+// strip covers only the panel's own padding, so nothing interactive sits under it.
+.grip--left {
+  left: 0;
+}
+
+.grip--right {
+  right: 0;
+}
+
+:host(.is-sizing) .grip::after {
+  opacity: 0.8;
+}
+
+// --- Header ----------------------------------------------------------------
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  padding: 8px 8px 8px 10px;
+  background: var(--accent-node-header);
+  border-bottom: 2px solid var(--accent-node);
+}
+
+:host(.is-floating) .head {
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.head__icon {
+  color: var(--text);
+  opacity: 0.85;
+}
+
+.head__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// Italic for a name the user gave, exactly as on the node.
+.head__title--named {
+  font-style: italic;
+}
+
+.head__tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.tool {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+  transition:
+    color var(--tempo) var(--ease),
+    background var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent-node);
+    outline-offset: -2px;
+  }
+
+  &.is-on {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.16);
+  }
+}
+
+// --- The quiet lines under the header --------------------------------------
+
+.note {
+  flex: none;
+  margin: 0;
+  padding: 4px 10px;
+  background: var(--node-body);
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 6px 8px;
+  background: var(--node-body);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.tools__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 3px 7px;
+  background: var(--node-sunken);
+  border: 1px solid var(--node-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+
+  input {
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    outline: none;
+
+    &::-webkit-search-cancel-button {
+      appearance: none;
+    }
+  }
+
+  &:focus-within {
+    border-color: var(--accent);
+  }
+}
+
+.tools__only {
+  flex: none;
+  padding: 3px 8px;
+  background: var(--node-sunken);
+  border: 1px solid var(--node-border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+  transition:
+    color var(--tempo) var(--ease),
+    border-color var(--tempo) var(--ease),
+    background var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--text);
+    border-color: var(--node-border-hover);
+  }
+
+  &.is-on {
+    background: var(--accent-node-dim);
+    border-color: var(--accent-node);
+    color: var(--text);
+  }
+}
+
+// --- Body ------------------------------------------------------------------
+// The one scrolling surface in the panel. A node body may never scroll — it would clip its ports —
+// but a panel has none, which is the whole reason twenty settings are workable here.
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.empty {
+  margin: 0;
+  padding: 18px 14px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  font-style: italic;
+  text-align: center;
+}
+
+.part {
+  // `flex: none` because the body is a flex column: without it the sections shrink to fit the
+  // available height instead of the body scrolling, which squeezed twelve rows into 265px and
+  // reported no overflow at all.
+  flex: none;
+  background: var(--node-body);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.part__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  transition: color var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--text);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent-node);
+    outline-offset: -2px;
+  }
+}
+
+.part__label,
+.group__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  flex: none;
+  color: var(--text-faint);
+  transform: rotate(-90deg);
+  transition: transform var(--tempo) var(--ease);
+
+  &.is-open {
+    transform: rotate(0deg);
+  }
+}
+
+.part__count {
+  flex: none;
+  padding: 0 5px;
+  background: var(--node-sunken);
+  border-radius: 7px;
+  color: var(--text-faint);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.part__changed {
+  flex: none;
+  padding: 0 5px;
+  background: color-mix(in srgb, var(--accent-node) 24%, transparent);
+  border-radius: 7px;
+  color: var(--accent-node);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
+
+.part__body {
+  padding: 0 0 4px;
+}
+
+.part__hidden {
+  margin: 0;
+  padding: 4px 10px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-style: italic;
+}
+
+.group__head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 4px 10px 4px 14px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: left;
+
+  &:hover {
+    color: var(--text-muted);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent-node);
+    outline-offset: -2px;
+  }
+}
+
+.group__body {
+  display: flex;
+  flex-direction: column;
+}
+
+// --- One row ---------------------------------------------------------------
+// Label left, control right, both on one line: that is what makes twenty settings scannable, and
+// it is the one thing a node body cannot do at 252px wide. A control that needs the width — a
+// prompt, a map, a row of chips — takes the line under its label instead.
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 44%) minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 8px;
+  padding: 3px 10px;
+  transition: background var(--tempo) var(--ease);
+
+  &:hover {
+    background: color-mix(in srgb, var(--node-sunken) 45%, transparent);
+  }
+}
+
+.row--tall {
+  grid-template-columns: minmax(0, 1fr);
+  padding-bottom: 5px;
+}
+
+// A toggle is a 15px box, so the 44% control column beside it is empty space paid for by an
+// ellipsised label — and the label is the half that says which of two refusal switches this is.
+// Short controls give the width back; the numeric and dropdown rows keep the shared column, so
+// what is left to line up still lines up.
+.row--switch {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+// A readout row: the widget is the whole row, its own label included, so this is one column and
+// tighter than a setting is. Thirty facts should read as a table, not as thirty forms.
+.row--readout {
+  grid-template-columns: minmax(0, 1fr);
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.row__head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  // Left-aligned, always. A centred label column makes a form unreadable: the eye has nothing to
+  // run down.
+  text-align: left;
+}
+
+.row__label {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.is-changed .row__label {
+  color: var(--text);
+}
+
+.row__hint {
+  flex: none;
+  color: var(--text-faint);
+  cursor: help;
+}
+
+// The accent dot: a changed setting says so before it is read, which is how someone scanning the
+// panel finds the four rows that explain a run.
+.row__dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-node);
+}
+
+.row__driven {
+  flex: none;
+  padding: 0 4px;
+  background: var(--port-colour, var(--accent));
+  border-radius: 2px;
+  color: var(--canvas);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.row__reset {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin-left: auto;
+  border-radius: 3px;
+  color: var(--text-faint);
+  opacity: 0;
+  transition:
+    opacity var(--tempo) var(--ease),
+    color var(--tempo) var(--ease),
+    background var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--text);
+    background: var(--node-sunken);
+  }
+}
+
+.row:hover .row__reset,
+.row__reset:focus-visible {
+  opacity: 1;
+}
+
+.row__control {
+  min-width: 0;
+}
+
+// --- Footer ----------------------------------------------------------------
+
+// Wrapping, because at the default 320px the changed count, the reset button and the width group
+// together need more than the footer has: without it the reset button's label broke inside a
+// button sized for one line, and at the 280px minimum the width reset ran off the edge. Each item
+// keeps its own line intact, so what wraps is a whole control rather than a squeezed one.
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  row-gap: 4px;
+  flex: none;
+  padding: 5px 8px 5px 10px;
+  background: var(--node-footer);
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+
+.foot__changed {
+  color: var(--accent-node);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.foot__reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  padding: 3px 8px;
+  background: var(--node-sunken);
+  border: 1px solid var(--node-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  transition:
+    color var(--tempo) var(--ease),
+    border-color var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--text);
+    border-color: var(--accent-node);
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+}
+
+.foot__spacer {
+  flex: 1;
+}
+
+// --- The node's width ------------------------------------------------------
+// In the footer beside the reset, because it is a property of the node rather than one of its
+// settings — the same place the node itself keeps its grip.
+.width {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  // Pushed right by its own margin as well as by the spacer, so that when the footer wraps this
+  // group still sits at the right edge instead of jumping to the left of the second line.
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.width__label {
+  color: var(--text-faint);
+}
+
+.width__input {
+  width: 52px;
+  padding: 2px 4px;
+  background: var(--node-field);
+  border: 1px solid var(--node-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  outline: none;
+  transition:
+    border-color var(--tempo) var(--ease),
+    box-shadow var(--tempo) var(--ease);
+
+  &:hover {
+    border-color: var(--node-border-hover);
+  }
+
+  &:focus-visible {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+}
+
+.width__unit {
+  color: var(--text-faint);
+}
+
+.width__reset {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 19px;
+  height: 19px;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  transition:
+    color var(--tempo) var(--ease),
+    background var(--tempo) var(--ease);
+
+  &:hover {
+    color: var(--text);
+    background: var(--node-sunken);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+}
+
+// --- Narrow windows --------------------------------------------------------
+// Below 1100px the canvas cannot spare a column, so the panel stops taking one: it overlays the
+// right edge instead, and floating is off the table — there is not enough canvas left for a card
+// to float over. CSS rather than `matchMedia` so there is no second source of truth about the
+// window's size.
+
+@media (max-width: 1100px) {
+  :host(.is-open) {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    width: var(--inspector-width, 320px);
+    max-height: none;
+    border-left: 1px solid var(--node-border);
+    border-radius: 0;
+    box-shadow: var(--shadow-dialog);
+    z-index: 30;
+  }
+
+  :host(.is-floating) .head {
+    cursor: default;
+  }
+
+  .tool--dock,
+  .grip--right {
+    display: none;
+  }
+}
+
+// A phone-width window: a sheet along the bottom, which is the only shape that leaves the canvas
+// usable at all.
+@media (max-width: 640px) {
+  :host(.is-open) {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 60vh;
+    border-top: 1px solid var(--node-border);
+    border-left: none;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+
+  .grip {
+    display: none;
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

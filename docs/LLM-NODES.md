@@ -24,7 +24,9 @@ llm/                          the subsystem — no NodeDefinition lives here
   provider/   LlmProvider SPI + the two wire formats (chat completions, responses)
               + SSE reader + HTTP transport
   auth/       CredentialStore, CredentialSource, the Codex source
-  discovery/  GatewayDirectory + ModelListingReader — asking a gateway about itself
+  discovery/  GatewayDirectory + ModelListingReader + EndpointFacts + ModelFacts +
+              Amounts (formatting) + TimeBudget + OptionalFetch + ModelEndpointPath —
+              asking a gateway about itself, as pure functions of the bodies it returns
   runtime/    RequestPacer (rpm · spacing · concurrency), CapabilityCheck, LlmCaller
   prompt/     PromptTemplate
 nodes/llm/    LlmTypes + one class per node + EndpointProfiles (the endpoint profile schema)
@@ -37,7 +39,7 @@ presets/      node presets — generic, not LLM-specific
 registry), matching `core/`'s rule for the same reason: every wire-format decision is then testable
 without a container or a socket.
 
-### 2.1 Ten nodes, not one
+### 2.1 Twelve nodes, not one
 
 One node with forty widgets is unreadable and one node per provider is four copies of the same
 logic. The split below follows *what changes together*:
@@ -46,6 +48,8 @@ logic. The split below follows *what changes together*:
 |---|---|---|
 | **Endpoint** | `LlmEndpoint` | Names a saved endpoint *profile*. One connection serves many models, and where it lives differs per machine — see [§3b](#3b-endpoint-profiles). |
 | **Model** | `LlmModel` | Capabilities, pricing and reasoning are properties of a model, not of a call. Several models share one endpoint. |
+| **Endpoint Info** | `LlmEndpointInfo` + `Text` + `Text[]` | What a gateway says about *itself*. All read, no settings — see [§4c](#4c-info-nodes-facts-with-a-timestamp). |
+| **Model Info** | `LlmModelInfo` + `Text` + `Text[]` | What a gateway says about *one model*, including every host serving it. Its own node for the same reason. |
 | **Generation Params** | `LlmSampling` | Optional. Absent in the simple case; overrides model defaults when present. |
 | **Variables** | `LlmVariables` | Names upstream values so a template can read them. |
 | **Prompt Template** | `Text` | Editable text or a saved preset, rendered against variables. Used for system *and* user prompts — one node, two instances. |
@@ -70,6 +74,14 @@ LlmVariables    opaque handle — a named map
 LlmAttachment   opaque handle — an image, a document, or text read from a file
 LlmResult       Struct{ text, finishReason, model, promptTokens, completionTokens,
                         reasoningTokens, costUsd, latencyMillis, sources }
+LlmEndpointInfo Struct{ gateway, baseUrl, reachable, fetchedAt, modelsServed, keyLabel,
+                        creditLimit, creditsRemaining, usageTotal, usageToday, freeTier,
+                        freeRequestsUsed, freeRequestsLimit, modelsWith…, inputModalitiesCsv }
+LlmModelInfo    Struct{ id, name, canonicalSlug, contextWindow, maxOutputTokens, inputPer1M,
+                        outputPer1M, pricePerM, capabilitiesCsv, inputModalitiesCsv,
+                        outputModalitiesCsv, providerCount, parametersCsv, released,
+                        knowledgeCutoff, moderated, aliasOf, huggingFaceId, tokenizer,
+                        pricingNote, description }
 ```
 
 `LlmResult` is a struct rather than a handle so that `Preview` and `Generate Report` — which accept
@@ -80,6 +92,14 @@ else connects the two but a programmer's memory.
 The handles are `Primitive`s because nothing downstream should reach inside them. `Attachment` is
 deliberately a class rather than a record for the same family of reason: a record would put a base64
 payload into a table cell the moment someone wired one into a preview.
+
+The two info structs are **flat and scalar-only**, which is the same argument arriving from the other
+side. A table cell is one line, so a nested `LlmKeyUsage{daily, weekly, monthly}` would render as
+`LlmKeyUsage[daily=0.42, …]` inside one column — a worse answer than the three columns it replaced.
+The lists a model has travel on their own `Text[]` output and, inside the struct, as joined text in a
+field named for it (`capabilitiesCsv`, `parametersCsv`). Every one of them, and the `toString` that
+makes a lone record preview as a report rather than a field dump, is held to its struct by
+`LlmTypeShapeTest`.
 
 ### 2.3 One request node that iterates
 
@@ -254,6 +274,114 @@ Both paths resolve the endpoint through `LlmEndpointNode.resolve` and `EndpointP
 the functions a *run* uses, so a green light and a working run cannot disagree about which URL, which
 credential or which headers the node meant.
 
+## 4c. Info nodes: facts with a timestamp
+
+"Reachable — 443 models offered" is a green light that disappears the moment the dialog closes. What
+someone planning a batch actually needs is how much credit is left, how many of those 443 models take
+images, whether today's free-model allowance is spent, and which of the seven hosts serving one model
+is cheapest — facts that belong on the canvas, beside the endpoint they describe, with the time they
+were read.
+
+So **Endpoint Info** and **Model Info** are nodes with no settings at all. Every row on them is a
+`Widget.Display`: drawn by the editor, filled in by a probe, and impossible to type into.
+
+**Why a widget value rather than an output.** An output exists only during a run and vanishes with
+it. A widget value persists in the saved workflow and is visible without anything being run, which is
+the whole point — the alternative is a node you have to execute to see what it already knows. The
+rows are also *undoable*, because a `DISCOVER` probe applies its values through the ordinary edit
+command, exactly as the Model node's bulb does.
+
+**Three styles, because three things genuinely differ on screen.** `line` for a figure or a sentence
+(a boolean draws as a ✓/✗ glyph; an ISO-8601 instant draws as "6 minutes ago" with the absolute value
+in a tooltip, which is what the `fetchedAt` row is for); `block` for a paragraph that has to wrap, so
+a published description reads as prose; `chips` for a list, so five modalities are five chips rather
+than the string `"text, image, file, video, audio"` that a reader has to parse back into a set. A
+`line` may carry a `unit` — `tok` on a context window — so the number stays a number on screen.
+
+**The value is already formatted.** A gateway quotes `"0.0000001625"` per token; what the row shows is
+`$0.1625 per M`. Doing that multiplication in the browser would be a second implementation of it, and
+the backend is what parsed the body. `Amounts` is where it lives, and what makes it testable: cents
+above a dollar, up to six decimals below one — because a per-million price of `$0.1625` shown as
+`$0.16` is a 1.5% lie about a batch, and a day's usage of `$0.000362` shown as `$0.00` says nothing
+was spent when something was.
+
+**Formatted also means formatted *enough*.** A `line` row holding an ISO-8601 instant is drawn as
+relative time, which is exactly what `fetchedAt` wants and the opposite of what a key expiry wants:
+every future instant is under 45 seconds old by that arithmetic, so a key expiring in three months
+would read "just now". An expiry is therefore formatted to a plain date before it becomes a row. The
+same argument runs through `LlmModelInfo`, which carries `pricePerM` as text beside its two numbers —
+a published `0` and an unquoted price are both `0.0` in a `Number` field, and `free in / free out per
+M` is the only place that difference survives into a saved struct.
+
+**Blank is a fact.** `""` means "this gateway does not publish it", and it is drawn as nothing rather
+than as a zero. That is the same rule as [§4b](#4b-discovery-a-first-draft-never-a-claim)'s first one
+and it needs one extra guarantee to hold: **a fetch writes every declared row, every time.** A fetch
+that only wrote the rows it found values for would leave the rest showing the *previous* endpoint's
+figures under a fresh timestamp, so re-pointing a node from a paid account to a free one would keep
+the old balance on screen. The row set is read off the descriptor rather than listed by hand, so
+adding a row cannot be forgotten in a clearing pass that does not exist. `LlmInfoNodesTest` fetches
+twice, against two different captured accounts, and asserts both answers wrote the identical key set.
+
+**A row is also no place for key-shaped text.** A display value persists in the saved workflow and
+travels with the file, so "widget values never hold secrets" has to hold for values the *gateway*
+chose as well as for the ones a user typed. OpenRouter names an unnamed key after the key itself —
+`sk-or-v1-0ca...618` — which is its own redaction and still key-shaped, so `EndpointFacts` reports
+such a label as `unnamed key`. Two signals are required to call it one, a known prefix *and* the
+truncating ellipsis, because a prefix alone would also mask a real label like `api-team`.
+
+**One budget per fetch, spent in priority order.** Three questions at one endpoint timeout each is a
+button that can hold the editor for six minutes; `TimeBudget` allows
+`min(endpoint timeout, 30 s)` for the whole thing. The call the verdict rests on goes first with the
+whole allowance, and the extras spend what is left — so a slow gateway costs the balance row rather
+than the answer, and a row names the call that did not get its turn.
+
+**An optional call's failure is a sentence, not a failure.** `HttpTransport.get` throws for every
+status ≥ 400, because a *call* cannot know which of them matters. `OptionalFetch` is where a probe
+decides: 404 is "no such endpoint on this gateway", 401/403 is "not readable with this key", anything
+else keeps the gateway's own words. It branches on the **status** and never on `LlmFailure.Kind`,
+which exists to answer "retry, change something, or stop" and collapses cases that differ here — 404
+classifies as `MODEL_UNAVAILABLE`, and about a credits endpoint that sentence would send the reader
+after the wrong setting. Measured: `/credits` answers 403 for a key that is not a management key,
+which is most of them, so a node that went red for it would be red for nearly every user. The same
+`/key` body that refuses the balance says `is_management_key: false`, so when *that* is the reason the
+row says it — `not readable: this key is not a management key`, the sentence that ends the
+investigation instead of starting one into a credential that is fine. Every other refusal keeps the
+transport's own words, because a 404, a spent budget or a timeout blamed on the key's kind would be
+the same misdirection from the other direction.
+
+**The model endpoints URL never splits the id.** An OpenRouter id is `vendor/model`, sometimes
+`vendor/model:free` and sometimes `~vendor/model-latest`; every separator a parser would reach for is
+a character that legitimately appears inside one. `ProviderProfile.modelEndpointsPath` is therefore a
+`{slug}` template rather than a prefix and a suffix, the gateway's own `canonical_slug` fills it when
+the listing has one, and only characters a URI path cannot carry are escaped. Live-verified:
+`/models/<full id>/endpoints` answers 200 for `:free`, for `:batch` and for a leading `~`; an alias
+answers `"endpoints": []`, which is rendered as "the gateway publishes no endpoints for this alias"
+rather than as an empty box.
+
+**Two paths were added to the gateway kind**, following [§4](#4-providers-quirks-are-data): `creditsPath`
+(`/credits` on OpenRouter) and `modelEndpointsPath`. Both default to blank, meaning "this gateway has
+none" — blank rather than a guess, because a path invented for llama.cpp turns "it does not do that"
+into a 404 the user has to interpret. `GatewayDirectory.get` is the only way the nodes reach a
+gateway, so `HttpTransport` stays injected in exactly one place and credential resolution is not
+re-implemented anywhere.
+
+**Grouped detail.** Six to eight headline rows stay in the node; everything else is an
+`advancedSetting` under a `section(…)` group — "Usage", "Balance", "Catalogue" on one node,
+"Identity", "Modalities", "Pricing", "Reasoning", "Limits", "Providers" on the other. A group is
+presentation only, and the same mechanism was applied to the settings that were already there: the
+Model node's twenty advanced fields now read as "Output limits", "Protocol", "Cost", "Routing" and
+"Escape hatch" instead of as one list, and LLM Request's as "Response shape", "Batching",
+"Web search" and "Refusals and retries".
+
+**One deliberate departure from "per M".** `pricing.web_search` arrives at `0.01` while every
+per-token field beside it is around `1e-7`. Multiplied, it would read `$10,000 per M`, which is the
+kind of number that makes a whole panel untrustworthy — so it is reported as the figure the gateway
+wrote, with the row saying so. In the same spirit, `pricing.overrides` turned out to come in two
+kinds that mean different things: 3 of the 69 models with overrides vary **by time of day**
+(`utc_days`, `utc_start`) and 66 vary **above a prompt-token threshold** (`min_prompt_tokens`). The
+note names which applies — "varies by time of day: $0.66–$1.32 /M in" — because a disclaimer that
+does not say why is one users learn to ignore.
+
 ## 5. Capabilities are checked, not hoped for
 
 Before a request is built, `CapabilityCheck` compares what the call asks for against what the model
@@ -343,7 +471,12 @@ here the user picks the model by wiring one, and the graph is the fallback chain
 | `PresetStoreTest` · `ProfileStoreTest` | round-trip, query, delete, path safety; defaults filled in for a partial file |
 | `LoadDatasetNodeTest` | JSON, JSON Lines, CSV with quoting and sniffed delimiters, plain lines |
 | `LlmProviderHttpTest` | the real HTTP path, streamed and buffered, against a JDK `HttpServer` |
-| `ModelListingReaderTest` | what three real gateways published, and what was concluded from it — including everything that was *not* |
+| `ModelListingReaderTest` | what three real gateways published, and what was concluded from it — including everything that was *not*, plus the `{data, total_count, links}` envelope |
+| `EndpointFactsTest` · `ModelFactsTest` | captured OpenRouter bodies in, formatted rows out; every blank that has to stay blank |
+| `AmountsTest` | the money and per-token arithmetic that would otherwise be done twice, in two languages |
+| `ModelEndpointPathTest` | the ids that must reach the gateway whole — live-verified for `:free`, `:batch` and a leading `~` |
+| `LlmInfoNodesTest` | both info nodes over fixtures, including "every display row is written on every fetch" |
+| `CatalogCodecTest` | the `display` widget and the `group` on every input — the payload the browser draws a node from |
 
 ## 10. Deliberately not in this pack
 

@@ -1,0 +1,31 @@
+{
+  "data": {
+    "label": "unbi-engine dev",
+    "limit": 50,
+    "limit_remaining": 37.66,
+    "limit_reset": null,
+    "usage": 12.34,
+    "usage_daily": 0.42,
+    "usage_weekly": 3.1,
+    "usage_monthly": 12.34,
+    "byok_usage": 1.5,
+    "byok_usage_daily": 0.1,
+    "byok_usage_weekly": 0.6,
+    "byok_usage_monthly": 1.5,
+    "is_free_tier": false,
+    "is_management_key": false,
+    "is_provisioning_key": false,
+    "include_byok_in_limit": false,
+    "expires_at": null,
+    "rate_limit": {
+      "requests": 20,
+      "interval": "10s",
+      "note": "deprecated"
+    },
+    "free_model_daily_requests": {
+      "used": 3,
+      "limit": 200,
+      "remaining": 197
+    }
+  }
+}

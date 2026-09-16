@@ -24,6 +24,7 @@ function input(key: string, type: PortType, connectable = true): NodeInputSpec {
     defaultValue: null,
     hint: null,
     advanced: false,
+    group: '',
     showWhen: null,
   };
 }

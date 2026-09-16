@@ -64,6 +64,7 @@ public final class CatalogCodec {
         node.set("default", JsonValues.of(input.defaultValue()));
         node.put("hint", input.hint());
         node.put("advanced", input.advanced());
+        node.put("group", input.group());
         if (input.showWhen() != null) {
             var condition = node.putObject("showWhen");
             condition.put("key", input.showWhen().key());
@@ -160,6 +161,11 @@ public final class CatalogCodec {
                 node.put("schema", profile.schema());
             }
             case Widget.Credential ignored -> node.put("kind", "credential");
+            case Widget.Display display -> {
+                node.put("kind", "display");
+                node.put("style", display.style().name().toLowerCase(java.util.Locale.ROOT));
+                node.put("unit", display.unit());
+            }
         }
         return node;
     }

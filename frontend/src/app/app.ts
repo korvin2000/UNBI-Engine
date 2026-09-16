@@ -6,7 +6,9 @@ import * as commands from './core/graph/commands';
 import { GraphStore } from './core/graph/graph-store';
 import { EngineSocket } from './core/runtime/engine-socket';
 import { RunStore } from './core/runtime/run-store';
+import { CanvasSelection } from './editor/canvas/canvas-selection';
 import { FlowCanvas } from './editor/canvas/flow-canvas';
+import { NodeInspector } from './editor/inspector/node-inspector';
 import { NodePalette } from './editor/palette/node-palette';
 import { EditorToolbar } from './editor/toolbar/editor-toolbar';
 import { FileBrowser } from './shared/file-browser/file-browser';
@@ -27,7 +29,16 @@ import { TextEditorService } from './shared/text-editor/text-editor.service';
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EditorToolbar, NodePalette, FlowCanvas, FileBrowser, PresetDialog, ProfileDialog, TextEditor],
+  imports: [
+    EditorToolbar,
+    NodePalette,
+    FlowCanvas,
+    NodeInspector,
+    FileBrowser,
+    PresetDialog,
+    ProfileDialog,
+    TextEditor,
+  ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -35,6 +46,7 @@ export class App implements OnInit {
   private readonly catalog = inject(CatalogService);
   private readonly socket = inject(EngineSocket);
   private readonly graph = inject(GraphStore);
+  private readonly selection = inject(CanvasSelection);
   private readonly runs = inject(RunStore);
   private readonly browser = inject(FileBrowserService);
   private readonly options = inject(OptionCatalogService);
@@ -67,17 +79,27 @@ export class App implements OnInit {
       return;
     }
 
+    // Inside the inspector these keys belong to the panel, not to the canvas. Delete on a focused
+    // toggle would otherwise delete the very node being edited, and Ctrl+A would select every node
+    // rather than the text in the filter box — both from a keystroke aimed at the panel.
+    const inPanel = isInsideInspector(event.target);
+
     const modifier = event.ctrlKey || event.metaKey;
     if (!modifier) {
       // Delete and Backspace both remove the selection: which one people reach for is a habit, and
       // an editor that honours only one of them feels broken to half its users.
-      if (event.key === 'Delete' || event.key === 'Backspace') {
+      if (!inPanel && (event.key === 'Delete' || event.key === 'Backspace')) {
         this.deleteSelection(event);
       }
       return;
     }
 
-    switch (event.key.toLowerCase()) {
+    const key = event.key.toLowerCase();
+    if (inPanel && (key === 'a' || key === 'd')) {
+      return;
+    }
+
+    switch (key) {
       case 'z':
         event.preventDefault();
         if (event.shiftKey) {
@@ -96,7 +118,9 @@ export class App implements OnInit {
         break;
       case 'a':
         event.preventDefault();
-        this.graph.select(this.graph.doc().nodes.map((node) => node.id));
+        // Through CanvasSelection so the canvas draws what the store now holds: a keystroke is not
+        // a gesture the flow library saw.
+        this.selection.select(this.graph.doc().nodes.map((node) => node.id));
         break;
       case 'enter':
         event.preventDefault();
@@ -122,6 +146,11 @@ export class App implements OnInit {
       this.graph.dispatch(commands.duplicateNodes(selected, () => crypto.randomUUID()));
     }
   }
+}
+
+/** Whether a keystroke happened inside the inspector panel, which owns its own keys. */
+function isInsideInspector(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.closest('app-node-inspector') !== null;
 }
 
 function isTextEntry(target: EventTarget | null): boolean {

@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   computed,
   inject,
@@ -12,6 +13,7 @@ import {
   FCreateConnectionEvent,
   FCreateNodeEvent,
   FDeleteSelectedEvent,
+  FFlowComponent,
   FFlowModule,
   FMoveNodesEvent,
   FReassignConnectionEvent,
@@ -19,23 +21,29 @@ import {
 } from '@foblex/flow';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { NodeSpec } from '../../core/catalog/catalog.models';
+import { withoutReadouts } from '../../core/catalog/node-rows';
 import * as commands from '../../core/graph/commands';
 import { GraphStore } from '../../core/graph/graph-store';
 import { PresetService } from '../../core/presets/preset.service';
+import { CanvasSelection } from './canvas-selection';
+import { InspectorStore } from '../inspector/inspector-store';
 import { Point, connectorId, newNode } from '../../core/graph/workflow.models';
 import { RunStore } from '../../core/runtime/run-store';
 import { assignable } from '../../core/types/assignability';
 import { portColourKey } from '../../core/types/port-type';
 import { Icon } from '../../shared/icon';
+import { ViewportStore } from './viewport-store';
 import { WorkflowNode } from './workflow-node';
 
 /** What a context menu can do. A union so the template cannot ask for anything else. */
 type MenuAction =
   | 'rename'
+  | 'settings'
   | 'save-preset'
   | 'collapse'
   | 'disable'
   | 'duplicate'
+  | 'reset-width'
   | 'disconnect'
   | 'delete'
   | 'fit'
@@ -52,6 +60,8 @@ interface OpenMenu {
   readonly y: number;
   readonly collapsed: boolean;
   readonly disabled: boolean;
+  /** Whether this node has a width of its own, which is the only case "Reset width" applies to. */
+  readonly resized: boolean;
 }
 
 /**
@@ -78,9 +88,21 @@ export class FlowCanvas {
   private readonly catalog = inject(CatalogService);
   private readonly runs = inject(RunStore);
   private readonly presets = inject(PresetService);
+  private readonly inspector = inject(InspectorStore);
+  private readonly viewport = inject(ViewportStore);
+  private readonly selection = inject(CanvasSelection);
   private readonly host = inject(ElementRef<HTMLElement>);
 
   private readonly canvas = viewChild.required(FCanvasComponent);
+  private readonly flow = viewChild(FFlowComponent);
+
+  constructor() {
+    // The library's half of the selection, handed to whatever selects a node without the library
+    // having seen the press — see CanvasSelection. `isSelectedChanged: false` because the store has
+    // already been written here, and the library's own state restore uses it the same way.
+    const forget = this.selection.register((ids) => this.flow()?.select([...ids], [], false));
+    inject(DestroyRef).onDestroy(forget);
+  }
 
   /**
    * Zoom limits, shared with the wheel.
@@ -98,9 +120,10 @@ export class FlowCanvas {
   /**
    * The node whose title is being edited, if any.
    *
-   * Held here rather than in the node component because the node is recreated whenever the document
-   * changes, and an edit that survived exactly as long as the component did would end the moment the
-   * first keystroke was committed.
+   * Held here rather than in the node component because the canvas is what starts the edit: the
+   * context menu lives here, so "Rename…" has to reach a node that may not even be the one the
+   * menu was opened over. (The `@for` below tracks by node id, so the node components themselves
+   * are reused across document changes and could hold per-instance state — the fold does.)
    */
   protected readonly renameRequested = signal<string | null>(null);
 
@@ -208,13 +231,19 @@ export class FlowCanvas {
 
   private addPreset(presetId: string, at: Point): void {
     const preset = this.presets.all().find((candidate) => candidate.id === presetId);
-    if (!preset || !this.catalog.byId().has(preset.nodeType)) {
+    const spec = preset ? this.catalog.byId().get(preset.nodeType) : undefined;
+    if (!preset || !spec) {
       return;
     }
     // The preset's name becomes the node's, which is the whole point of naming one: a canvas with
-    // four LLM Request nodes on it should say which is which.
+    // four LLM Request nodes on it should say which is which. Readouts are dropped on the way in as
+    // well as on the way out, because a preset saved by an older build may still carry them — and a
+    // node that arrives already claiming facts nobody fetched is worse than an empty one.
     this.graph.dispatch(
-      commands.addNode(newNode(preset.nodeType, at, { ...preset.values }, preset.name), preset.name),
+      commands.addNode(
+        newNode(preset.nodeType, at, withoutReadouts(spec, preset.values), preset.name),
+        preset.name,
+      ),
     );
   }
 
@@ -244,32 +273,36 @@ export class FlowCanvas {
     // Right-clicking a node that is not in the selection acts on that node, which is what every
     // other editor does and what stops a menu from silently applying to something off screen.
     if (!this.graph.selection().has(node.id)) {
-      this.graph.select([node.id]);
+      this.selection.select([node.id]);
     }
-    this.showMenu(request.x, request.y, node.id, node.collapsed, node.disabled);
+    this.showMenu(request.x, request.y, {
+      nodeId: node.id,
+      collapsed: node.collapsed,
+      disabled: node.disabled,
+      resized: node.width !== undefined,
+    });
   }
 
   protected openCanvasMenu(event: MouseEvent): void {
     event.preventDefault();
-    this.showMenu(event.clientX, event.clientY, null, false, false);
+    this.showMenu(event.clientX, event.clientY, {
+      nodeId: null,
+      collapsed: false,
+      disabled: false,
+      resized: false,
+    });
   }
 
-  private showMenu(
-    clientX: number,
-    clientY: number,
-    nodeId: string | null,
-    collapsed: boolean,
-    disabled: boolean,
-  ): void {
+  private showMenu(clientX: number, clientY: number, about: Omit<OpenMenu, 'x' | 'y'>): void {
     const rect = this.host.nativeElement.getBoundingClientRect();
-    const height = nodeId ? 250 : 128;
+    // Roughly how tall the menu about to open is, so it is placed somewhere it fits rather than
+    // clipped at the bottom edge. "Reset width" is conditional, so it counts a row.
+    const height = about.nodeId ? 282 + (about.resized ? 26 : 0) : 128;
     this.menu.set({
-      nodeId,
+      ...about,
       // Clamped inside the canvas so a menu opened near the right or bottom edge stays reachable.
       x: Math.max(4, Math.min(clientX - rect.left, rect.width - 180)),
       y: Math.max(4, Math.min(clientY - rect.top, rect.height - height)),
-      collapsed,
-      disabled,
     });
   }
 
@@ -287,6 +320,9 @@ export class FlowCanvas {
    * Widget values only. Position, connections and run state are properties of this graph, not of
    * the configuration, and a preset that carried them would drop a node onto the next canvas in
    * the wrong place, half-connected.
+   *
+   * Readouts go the same way and for the same reason: what a gateway answered is not a setting, and
+   * a preset carrying last week's credit balance would present it as freshly fetched.
    */
   private saveAsPreset(nodeId: string): void {
     const node = this.graph.node(nodeId);
@@ -299,7 +335,7 @@ export class FlowCanvas {
       group: spec.category,
       description: spec.description,
       nodeType: node.type,
-      values: { ...node.values },
+      values: withoutReadouts(spec, node.values),
     });
   }
 
@@ -315,7 +351,7 @@ export class FlowCanvas {
         this.fit();
         return;
       case 'select-all':
-        this.graph.select(this.doc().nodes.map((node) => node.id));
+        this.selection.select(this.doc().nodes.map((node) => node.id));
         return;
       case 'clear':
         this.graph.clear();
@@ -334,6 +370,9 @@ export class FlowCanvas {
       case 'rename':
         this.renameRequested.set(nodeId);
         break;
+      case 'settings':
+        this.inspector.show(nodeId);
+        break;
       case 'save-preset':
         this.saveAsPreset(nodeId);
         break;
@@ -345,6 +384,9 @@ export class FlowCanvas {
         break;
       case 'duplicate':
         this.graph.dispatch(commands.duplicateNodes(targets, () => crypto.randomUUID()));
+        break;
+      case 'reset-width':
+        this.graph.dispatch(commands.resizeNodes(targets, undefined));
         break;
       case 'disconnect': {
         const attached = this.doc()
@@ -421,8 +463,17 @@ export class FlowCanvas {
     this.syncZoomLabel();
   }
 
+  /**
+   * The zoom, as the toolbar shows it and as the nodes need it.
+   *
+   * Called from every gesture and every programmatic change, which is why publishing the scale
+   * belongs here rather than in `onCanvasChange` alone: a node's width grip divides the pointer
+   * delta by this number, and a stale scale after a fit would make one drag resize by double.
+   */
   private syncZoomLabel(): void {
-    this.zoomLabel.set(`${Math.round(this.canvas().getScale() * 100)}%`);
+    const scale = this.canvas().getScale();
+    this.zoomLabel.set(`${Math.round(scale * 100)}%`);
+    this.viewport.setScale(scale);
   }
 
   /**

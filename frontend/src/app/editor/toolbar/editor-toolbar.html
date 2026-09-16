@@ -74,6 +74,30 @@
 
   <span class="actions__divider"></span>
 
+  <!-- The settings panel. A toggle rather than an opener: it is the only way back once it has been
+       closed, and `aria-pressed` is what says which of the two a press will do. Disabled with
+       nothing to show, because the panel draws a node or draws nothing — a button that lit up over
+       an empty screen would announce a panel nobody could see. -->
+  <button
+    type="button"
+    [disabled]="!inspectorOpen() && !inspectorCanOpen()"
+    [class.is-on]="inspectorOpen()"
+    [attr.aria-pressed]="inspectorOpen()"
+    [attr.title]="
+      inspectorOpen()
+        ? 'Hide the node settings panel'
+        : inspectorCanOpen()
+          ? 'Show the node settings panel'
+          : 'Select a node to edit its settings'
+    "
+    aria-label="Node settings panel"
+    (click)="toggleInspector()"
+  >
+    <app-icon name="sliders" [size]="15" />
+  </button>
+
+  <span class="actions__divider"></span>
+
   <button type="button" title="Load the example workflow" aria-label="Load the example workflow" (click)="loadExample()">
     <app-icon name="star" [size]="15" />
   </button>

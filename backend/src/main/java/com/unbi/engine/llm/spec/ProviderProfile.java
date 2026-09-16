@@ -25,6 +25,13 @@ import java.util.Optional;
  *     {@code /models} for almost everyone, and a field rather than a constant because OpenRouter
  *     serves its model catalogue <em>unauthenticated</em>: a listing there answers 200 for a key
  *     revoked an hour ago, which is the exact failure a test button exists to prevent
+ * @param creditsPath   where an account balance lives, blank when this gateway publishes none.
+ *     Blank is the honest default: llama.cpp has no balance to report, and a path guessed for it
+ *     would turn "this gateway does not do that" into a 404 the user has to interpret
+ * @param modelEndpointsPath which hosts serve one model, as a template containing {@code {slug}};
+ *     blank when the gateway does not publish it. A template rather than a prefix and a suffix,
+ *     because the id goes in whole — several OpenRouter ids contain a {@code /} and a {@code :},
+ *     and splitting one to build a path is how {@code deepseek/deepseek-r1:free} becomes a 404
  */
 public record ProviderProfile(
         String id,
@@ -38,7 +45,9 @@ public record ProviderProfile(
         ApiFormat defaultApiFormat,
         RatePolicy rate,
         String notes,
-        String probePath) {
+        String probePath,
+        String creditsPath,
+        String modelEndpointsPath) {
 
     public ProviderProfile {
         credentialRef = credentialRef == null ? "" : credentialRef;
@@ -46,6 +55,8 @@ public record ProviderProfile(
         rate = rate == null ? RatePolicy.UNLIMITED : rate;
         notes = notes == null ? "" : notes;
         probePath = probePath == null || probePath.isBlank() ? "/models" : probePath.trim();
+        creditsPath = creditsPath == null ? "" : creditsPath.trim();
+        modelEndpointsPath = modelEndpointsPath == null ? "" : modelEndpointsPath.trim();
     }
 
     /** Where a model listing lives. Always {@code /models}; the credential probe may differ. */
@@ -70,7 +81,9 @@ public record ProviderProfile(
                         "One model id can be served by many hosts with different sampler support. "
                                 + "Set provider order and Require parameter support on the model node "
                                 + "for any call carrying more than a temperature.",
-                        "/key"),
+                        "/key",
+                        "/credits",
+                        "/models/{slug}/endpoints"),
                 new ProviderProfile(
                         "llamacpp",
                         "llama.cpp (llama-server)",
@@ -85,7 +98,7 @@ public record ProviderProfile(
                         "A single-slot server is one lane no matter what this says, so max "
                                 + "concurrent stays at 1 unless the server was started with more "
                                 + "slots. top_k and min_p are native here.",
-                        "/models"),
+                        "/models", "", ""),
                 new ProviderProfile(
                         "omniroute",
                         "OmniRoute",
@@ -101,7 +114,7 @@ public record ProviderProfile(
                                 + "measured returning each other's completions. A models listing is "
                                 + "not a health check, and an identical body can come back from a "
                                 + "response cache.",
-                        "/models"),
+                        "/models", "", ""),
                 new ProviderProfile(
                         "openai",
                         "OpenAI",
@@ -115,7 +128,7 @@ public record ProviderProfile(
                         RatePolicy.UNLIMITED,
                         "Reasoning models want max_completion_tokens rather than max_tokens; set it "
                                 + "on the model node.",
-                        "/models"),
+                        "/models", "", ""),
                 new ProviderProfile(
                         "codex",
                         "Codex (ChatGPT account)",
@@ -129,7 +142,7 @@ public record ProviderProfile(
                         new RatePolicy(0, 200, 1),
                         "Uses the credentials the codex CLI already wrote; run `codex login` if the "
                                 + "token has expired. Responses only.",
-                        "/models"),
+                        "/models", "", ""),
                 new ProviderProfile(
                         "custom",
                         "Custom OpenAI-compatible",
@@ -142,7 +155,7 @@ public record ProviderProfile(
                         ApiFormat.CHAT_COMPLETIONS,
                         RatePolicy.UNLIMITED,
                         "Anything that speaks the OpenAI shape. Fill in the fields the gateway needs.",
-                        "/models"));
+                        "/models", "", ""));
     }
 
     public static Optional<ProviderProfile> byId(String id) {

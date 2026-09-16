@@ -55,9 +55,18 @@ public final class Fixtures {
         return new EndpointProfiles(gateways(), new CredentialStore(List.of()));
     }
 
+    /** A store answering for exactly these credential names, for probes that check one is there. */
+    public static CredentialStore credentials(String... names) {
+        return new CredentialStore(List.of(new com.unbi.engine.llm.auth.NamedCredentials(names)));
+    }
+
     /** An endpoint node whose profiles live under {@code directory}. */
     public static LlmEndpointNode endpointNode(Path directory) {
-        var profiles = endpointProfiles();
+        return endpointNode(directory, endpointProfiles());
+    }
+
+    /** The same, over a given schema — the seam for a stubbed directory or a stocked key store. */
+    public static LlmEndpointNode endpointNode(Path directory, EndpointProfiles profiles) {
         return new LlmEndpointNode(new ProfileStore(new DataDirectory(directory), List.of(profiles)), profiles);
     }
 
@@ -112,6 +121,21 @@ public final class Fixtures {
                 ProviderRouting.NONE,
                 List.of(),
                 Map.of());
+    }
+
+    /** An endpoint configured as the OpenRouter gateway kind, for the calls that kind implies. */
+    public static EndpointSpec openrouter() {
+        return new EndpointSpec(
+                "or", "openrouter", "https://openrouter.ai/api/v1", EndpointSpec.AuthScheme.BEARER,
+                "openrouter", Map.of(), RatePolicy.UNLIMITED, 30_000, true,
+                TokenUsage.CachedTokenMode.INCLUDED, false);
+    }
+
+    public static ModelSpec named(ModelSpec base, String name) {
+        return new ModelSpec(
+                base.endpoint(), name, base.apiFormat(), base.capabilities(), base.reasoning(),
+                base.webSearchMode(), base.pricing(), base.contextWindow(), base.maxOutputTokens(),
+                base.maxTokensParam(), base.sampling(), base.routing(), base.tags(), base.extraBody());
     }
 
     public static ModelSpec with(ModelSpec base, Capability... capabilities) {

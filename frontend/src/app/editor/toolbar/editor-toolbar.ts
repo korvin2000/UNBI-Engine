@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { GraphStore } from '../../core/graph/graph-store';
+import { InspectorStore } from '../inspector/inspector-store';
 import { RunStore } from '../../core/runtime/run-store';
 import { Icon } from '../../shared/icon';
 import { WorkflowFileService } from '../workflow-file.service';
@@ -22,6 +23,13 @@ export class EditorToolbar {
   private readonly graph = inject(GraphStore);
   private readonly files = inject(WorkflowFileService);
   private readonly runs = inject(RunStore);
+  private readonly inspector = inject(InspectorStore);
+
+  /** Whether the settings panel is showing, for the button's pressed state. */
+  protected readonly inspectorOpen = this.inspector.open;
+
+  /** Whether there is a node for the panel to show, which is when the button can do anything. */
+  protected readonly inspectorCanOpen = this.inspector.canOpen;
 
   protected readonly canUndo = this.graph.canUndo;
   protected readonly canRedo = this.graph.canRedo;
@@ -143,6 +151,11 @@ export class EditorToolbar {
   protected clear(): void {
     this.graph.clear();
     this.runs.reset();
+  }
+
+  /** The settings panel, from the toolbar: the way back to it once it has been closed. */
+  protected toggleInspector(): void {
+    this.inspector.toggle();
   }
 
   protected loadExample(): void {

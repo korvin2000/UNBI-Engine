@@ -313,5 +313,58 @@ public sealed interface Widget {
      */
     record Credential() implements Widget {}
 
+    /**
+     * A fact the backend found out, shown and never typed.
+     *
+     * <p>Its own kind rather than a disabled text field, because the three things this has to draw
+     * are not one control with a flag: a price is a line, a published description is a paragraph
+     * that has to wrap, and a modality list is a row of chips that must not become
+     * {@code "text, image, video"} — a string the reader has to parse back into a set in their head.
+     *
+     * <p>The value is already formatted here. Rendering is where a gateway's per-token decimal string
+     * would turn into {@code $0.15 per M} in the browser, and a second implementation of that sum is
+     * a second place for it to be wrong; the backend read the body, so the backend says what it means.
+     *
+     * <p>Blank means "this gateway does not publish it", which is why a probe writes every display
+     * key on every fetch: a row left untouched would keep showing what a different endpoint said.
+     *
+     * @param style how to draw it — one line, a wrapped paragraph, or one chip per entry
+     * @param unit  a suffix the editor appends to a {@code LINE} number, e.g. {@code tok}; blank for
+     *     none. A unit rather than baking it into the value so the number stays a number on screen
+     *     and the unit can be set in a smaller type than the figure it qualifies.
+     */
+    record Display(Style style, String unit) implements Widget {
+
+        public Display {
+            style = style == null ? Style.LINE : style;
+            unit = unit == null ? "" : unit.trim();
+        }
+
+        public enum Style {
+            /** One line of text, a number, or a boolean drawn as a ✓/✗ glyph. */
+            LINE,
+            /** Several lines, wrapped — a description as the gateway published it. */
+            BLOCK,
+            /** A list of strings, one chip each. */
+            CHIPS
+        }
+
+        public static Display line() {
+            return new Display(Style.LINE, "");
+        }
+
+        public static Display line(String unit) {
+            return new Display(Style.LINE, unit);
+        }
+
+        public static Display block() {
+            return new Display(Style.BLOCK, "");
+        }
+
+        public static Display chips() {
+            return new Display(Style.CHIPS, "");
+        }
+    }
+
     record Option(String value, String label) {}
 }
