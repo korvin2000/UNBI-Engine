@@ -1,9 +1,18 @@
-<div class="brand">
+<!-- The brand mark is the way into the application settings. -->
+<button class="brand" type="button" [attr.title]="'toolbar.settings' | t" [attr.aria-label]="'toolbar.settings' | t" (click)="openSettings()">
   <span class="brand__mark"><app-icon name="link" [size]="18" /></span>
   <span class="brand__name">UNBI</span>
   <span class="brand__chip">Prototype</span>
-  <span class="brand__chip brand__chip--version">v0.1.0</span>
-</div>
+  <span class="brand__chip brand__chip--version">v{{ version }}</span>
+</button>
+
+<!-- Which workflow is on the canvas, and whether it has changed since it was saved. -->
+<span class="document" [class.is-dirty]="dirty()" [class.is-untitled]="!documentName()" [attr.title]="documentTooltip()">
+  <span class="document__name">{{ documentName() || ('toolbar.untitled' | t) }}</span>
+  @if (dirty()) {
+    <span class="document__dot" aria-hidden="true"></span>
+  }
+</span>
 
 <div class="transport">
   <button
@@ -21,8 +30,8 @@
     class="transport__button"
     type="button"
     [disabled]="!isRunning()"
-    title="Stop the run"
-    aria-label="Stop the run"
+    [attr.title]="'toolbar.stop' | t"
+    [attr.aria-label]="'toolbar.stop' | t"
     (click)="stop()"
   >
     <app-icon name="stop" [size]="15" [filled]="true" [weight]="0" />
@@ -41,7 +50,7 @@
     [attr.data-kind]="statusKind()"
     [class.is-actionable]="problems().length > 0"
     [attr.aria-expanded]="problemsOpen()"
-    [attr.title]="problems().length > 0 ? 'Show what is stopping the run' : statusText()"
+    [attr.title]="problems().length > 0 ? ('toolbar.showProblems' | t) : statusText()"
     (click)="toggleProblems()"
   >
     <span class="status__bar" [style.width.%]="progressPercent()"></span>
@@ -52,7 +61,7 @@
   </button>
 
   @if (problemsOpen() && problems().length > 0) {
-    <div class="problems-backdrop" (pointerdown)="closeProblems()"></div>
+    <div class="menu-backdrop" (pointerdown)="closeProblems()"></div>
     <ul class="problems" role="list">
       @for (problem of problems(); track $index) {
         <li>
@@ -68,7 +77,7 @@
   <button type="button" [disabled]="!canUndo()" [attr.title]="undoTooltip()" aria-label="Undo" (click)="undo()">
     <app-icon name="undo" [size]="15" />
   </button>
-  <button type="button" [disabled]="!canRedo()" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" (click)="redo()">
+  <button type="button" [disabled]="!canRedo()" [attr.title]="'toolbar.redo' | t" aria-label="Redo" (click)="redo()">
     <app-icon name="redo" [size]="15" />
   </button>
 
@@ -84,13 +93,9 @@
     [class.is-on]="inspectorOpen()"
     [attr.aria-pressed]="inspectorOpen()"
     [attr.title]="
-      inspectorOpen()
-        ? 'Hide the node settings panel'
-        : inspectorCanOpen()
-          ? 'Show the node settings panel'
-          : 'Select a node to edit its settings'
+      (inspectorOpen() ? 'toolbar.inspectorHide' : inspectorCanOpen() ? 'toolbar.inspectorShow' : 'toolbar.inspectorSelect') | t
     "
-    aria-label="Node settings panel"
+    [attr.aria-label]="'toolbar.inspector' | t"
     (click)="toggleInspector()"
   >
     <app-icon name="sliders" [size]="15" />
@@ -98,20 +103,81 @@
 
   <span class="actions__divider"></span>
 
-  <button type="button" title="Load the example workflow" aria-label="Load the example workflow" (click)="loadExample()">
-    <app-icon name="star" [size]="15" />
-  </button>
-  <button type="button" title="Open a workflow file" aria-label="Open a workflow file" (click)="open()">
+  <!-- Favourites: the workflows kept in the library's favorites/ folder, and the built-in example. -->
+  <span class="favorites-wrap">
+    <button
+      type="button"
+      [class.is-on]="favoritesOpen()"
+      [attr.aria-expanded]="favoritesOpen()"
+      [attr.title]="'toolbar.favorites' | t"
+      [attr.aria-label]="'toolbar.favorites' | t"
+      (click)="toggleFavorites()"
+    >
+      <app-icon name="star" [size]="15" />
+    </button>
+
+    @if (favoritesOpen()) {
+      <div class="menu-backdrop" (pointerdown)="closeFavorites()"></div>
+      <div class="menu" role="menu">
+        <div class="menu__title">{{ 'favorites.title' | t }}</div>
+
+        @if (favoriteToConfirm(); as choice) {
+          <p class="menu__ask">{{ 'favorites.unsaved' | t: { name: documentName() || ('toolbar.untitled' | t) } }}</p>
+          <div class="menu__ask-actions">
+            <button class="menu__item menu__item--danger" type="button" role="menuitem" (click)="confirmChoice()">
+              <app-icon name="warning" [size]="12" />
+              {{ 'favorites.discard' | t }}
+            </button>
+            <button class="menu__item" type="button" role="menuitem" (click)="cancelChoice()">
+              {{ 'common.cancel' | t }}
+            </button>
+          </div>
+        } @else {
+          @for (entry of favorites(); track entry.id) {
+            <button class="menu__item" type="button" role="menuitem" [class.is-current]="current()?.id === entry.id" (click)="choose(entry)">
+              <app-icon name="star" [size]="12" [filled]="true" [weight]="0" />
+              <span class="menu__label">{{ entry.name }}</span>
+            </button>
+          } @empty {
+            <p class="menu__empty">{{ 'favorites.empty' | t }}</p>
+          }
+
+          <button class="menu__item" type="button" role="menuitem" [attr.title]="'favorites.exampleHint' | t" (click)="choose('example')">
+            <app-icon name="sparkles" [size]="12" />
+            <span class="menu__label">{{ 'favorites.example' | t }}</span>
+          </button>
+
+          <div class="menu__divider"></div>
+
+          @if (current(); as entry) {
+            <button class="menu__item" type="button" role="menuitem" (click)="toggleCurrentFavorite()">
+              <app-icon name="star" [size]="12" [filled]="!entry.favorite" [weight]="entry.favorite ? 1.6 : 0" />
+              <span class="menu__label">
+                {{ (entry.favorite ? 'favorites.remove' : 'favorites.add') | t: { name: entry.name } }}
+              </span>
+            </button>
+          }
+          <button class="menu__item" type="button" role="menuitem" (click)="openLibraryFromMenu()">
+            <app-icon name="documents" [size]="12" />
+            <span class="menu__label">{{ 'favorites.library' | t }}</span>
+          </button>
+        }
+      </div>
+    }
+  </span>
+
+  <button type="button" [attr.title]="'toolbar.openLibrary' | t" [attr.aria-label]="'toolbar.openLibrary' | t" (click)="open()">
     <app-icon name="open" [size]="15" />
   </button>
-  <button type="button" title="Save this workflow" aria-label="Save this workflow" (click)="save()">
+  <button type="button" [attr.title]="'toolbar.save' | t" [attr.aria-label]="'toolbar.save' | t" (click)="save()">
     <app-icon name="save" [size]="15" />
   </button>
   <button
     type="button"
     [disabled]="nodeCount() === 0"
-    title="Clear the canvas"
-    aria-label="Clear the canvas"
+    [class.is-armed]="clearArmed()"
+    [attr.title]="(clearArmed() ? 'toolbar.clearArmed' : 'toolbar.clear') | t"
+    [attr.aria-label]="'toolbar.clear' | t"
     (click)="clear()"
   >
     <app-icon name="trash" [size]="15" />
@@ -122,9 +188,9 @@
   <span
     class="link"
     [class.is-live]="connection() === 'open'"
-    [attr.title]="connection() === 'open' ? 'Connected to the engine' : 'The editor cannot reach the engine — Run is unavailable until it reconnects'"
+    [attr.title]="(connection() === 'open' ? 'toolbar.connectedTooltip' : 'toolbar.offlineTooltip') | t"
   >
     <span class="link__dot"></span>
-    {{ connection() === 'open' ? 'Connected' : connection() === 'connecting' ? 'Connecting' : 'Offline' }}
+    {{ connectionText() }}
   </span>
 </div>

@@ -5,7 +5,7 @@
     [class.is-active]="tab() === 'nodes'"
     (click)="showTab('nodes')"
   >
-    Nodes
+    {{ 'palette.nodes' | t }}
   </button>
   <button
     class="panel-head__tab"
@@ -13,7 +13,7 @@
     [class.is-active]="tab() === 'presets'"
     (click)="showTab('presets')"
   >
-    Presets
+    {{ 'palette.presets' | t }}
     @if (presetTotal() > 0) {
       <span class="panel-head__count">{{ presetTotal() }}</span>
     }
@@ -25,19 +25,19 @@
   <input
     class="search__input"
     type="search"
-    placeholder="Search…"
+    [placeholder]="'palette.search' | t"
     [value]="query()"
     (input)="onSearch($event)"
-    [attr.aria-label]="tab() === 'nodes' ? 'Search nodes' : 'Search presets'"
+    [attr.aria-label]="(tab() === 'nodes' ? 'palette.searchNodes' : 'palette.searchPresets') | t"
   />
   @if (isSearching()) {
-    <button class="search__clear" type="button" (click)="clearSearch()" aria-label="Clear search">×</button>
+    <button class="search__clear" type="button" (click)="clearSearch()" [attr.aria-label]="'palette.clearSearch' | t">×</button>
   }
 </div>
 
 @if (isSearching()) {
   @let found = tab() === 'nodes' ? matchCount() : presetCount();
-  <p class="result-count">{{ found }} {{ found === 1 ? 'match' : 'matches' }}</p>
+  <p class="result-count">{{ 'palette.matches' | n: found }}</p>
 }
 
 <div class="scroller">
@@ -45,7 +45,7 @@
     @if (presetError()) {
       <div class="notice notice--error">
         <app-icon name="warning" [size]="18" />
-        <p>Could not reach the engine.</p>
+        <p>{{ 'common.engineUnreachable' | t }}</p>
         <p class="notice__detail">{{ presetError() }}</p>
       </div>
     }
@@ -78,7 +78,7 @@
                   {{ preset.name }}
                   <!-- Which node this configures, because a name alone does not say — and a preset
                        whose node type this engine no longer serves says that too. -->
-                  <small class="entry__sub">{{ isOrphan(preset) ? preset.nodeType + ' (unknown)' : preset.label }}</small>
+                  <small class="entry__sub">{{ isOrphan(preset) ? ('palette.unknownType' | t: { type: preset.nodeType }) : preset.label }}</small>
                 </span>
               </button>
 
@@ -89,17 +89,17 @@
                 <button
                   class="entry-row__confirm"
                   type="button"
-                  title="Delete this preset for good"
+                  [attr.title]="'palette.deleteForGood' | t"
                   (click)="deletePreset(preset)"
                 >
                   <app-icon name="trash" [size]="11" />
-                  Delete
+                  {{ 'common.delete' | t }}
                 </button>
                 <button
                   class="entry-row__action"
                   type="button"
-                  title="Keep it"
-                  aria-label="Cancel"
+                  [attr.title]="'common.keep' | t"
+                  [attr.aria-label]="'common.cancel' | t"
                   (click)="cancelDelete()"
                 >
                   <app-icon name="close" [size]="11" [weight]="2.5" />
@@ -108,8 +108,8 @@
                 <button
                   class="entry-row__action entry-row__action--delete"
                   type="button"
-                  [attr.title]="'Delete “' + preset.name + '”'"
-                  [attr.aria-label]="'Delete ' + preset.name"
+                  [attr.title]="'palette.deletePreset' | t: { name: preset.name }"
+                  [attr.aria-label]="'palette.deletePreset' | t: { name: preset.name }"
                   (click)="askDelete(preset)"
                 >
                   <app-icon name="trash" [size]="12" />
@@ -122,28 +122,24 @@
     } @empty {
       <div class="notice">
         @if (isSearching()) {
-          <p>No presets match “{{ query() }}”.</p>
+          <p>{{ 'palette.noPresets' | t: { query: query() } }}</p>
         } @else {
-          <p>No saved configurations yet.</p>
-          <p class="notice__detail">
-            Set a node up the way you want it, right-click it and choose <b>Save as preset</b>. It is
-            kept on the engine, apart from any workflow, and appears here for every graph you build
-            afterwards.
-          </p>
+          <p>{{ 'palette.noPresetsYet' | t }}</p>
+          <p class="notice__detail">{{ 'palette.presetsHint' | t }}</p>
         }
       </div>
     }
   } @else {
   @switch (state()) {
     @case ('loading') {
-      <p class="notice">Loading nodes…</p>
+      <p class="notice">{{ 'palette.loading' | t }}</p>
     }
     @case ('failed') {
       <div class="notice notice--error">
         <app-icon name="warning" [size]="18" />
-        <p>Could not reach the engine.</p>
+        <p>{{ 'common.engineUnreachable' | t }}</p>
         <p class="notice__detail">{{ loadError() }}</p>
-        <button class="notice__retry" type="button" (click)="retry()">Try again</button>
+        <button class="notice__retry" type="button" (click)="retry()">{{ 'palette.retry' | t }}</button>
       </div>
     }
     @default {
@@ -188,7 +184,7 @@
           }
         </section>
       } @empty {
-        <p class="notice">No nodes match “{{ query() }}”.</p>
+        <p class="notice">{{ 'palette.noNodes' | t: { query: query() } }}</p>
       }
     }
   }
@@ -197,8 +193,8 @@
 
 <footer class="panel-foot">
   @if (tab() === 'presets') {
-    Drag or double-click to add · right-click a node to save one
+    {{ 'palette.footerPresets' | t }}
   } @else {
-    Drag onto the canvas, or double-click to add
+    {{ 'palette.footerNodes' | t }}
   }
 </footer>

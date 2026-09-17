@@ -9,6 +9,9 @@ import { newNode } from '../../core/graph/workflow.models';
 import { Preset, PresetService } from '../../core/presets/preset.service';
 import { PRESET_PREFIX } from '../canvas/flow-canvas';
 import { Icon } from '../../shared/icon';
+import { CountPipe } from '../../core/i18n/count.pipe';
+import { TranslatePipe } from '../../core/i18n/translate.pipe';
+import { Translator } from '../../core/i18n/translator';
 
 /**
  * The node palette.
@@ -23,7 +26,7 @@ import { Icon } from '../../shared/icon';
 @Component({
   selector: 'app-node-palette',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FFlowModule, Icon],
+  imports: [FFlowModule, Icon, TranslatePipe, CountPipe],
   templateUrl: './node-palette.html',
   styleUrl: './node-palette.scss',
 })
@@ -31,6 +34,7 @@ export class NodePalette {
   private readonly catalog = inject(CatalogService);
   private readonly graph = inject(GraphStore);
   private readonly presets = inject(PresetService);
+  private readonly translator = inject(Translator);
 
   protected readonly tab = signal<'nodes' | 'presets'>('nodes');
   protected readonly query = signal('');
@@ -88,15 +92,16 @@ export class NodePalette {
           .includes(needle),
     );
 
+    const ungrouped = this.translator.t('palette.ungrouped');
     const byGroup = new Map<string, Preset[]>();
     for (const preset of matching) {
-      const key = preset.group || 'Ungrouped';
+      const key = preset.group || ungrouped;
       const bucket = byGroup.get(key) ?? [];
       bucket.push(preset);
       byGroup.set(key, bucket);
     }
     return [...byGroup.entries()]
-      .sort(([a], [b]) => (a === 'Ungrouped' ? 1 : b === 'Ungrouped' ? -1 : a.localeCompare(b)))
+      .sort(([a], [b]) => (a === ungrouped ? 1 : b === ungrouped ? -1 : a.localeCompare(b)))
       .map(([name, entries]) => ({ name, entries }));
   });
 
@@ -158,7 +163,7 @@ export class NodePalette {
   /** The tooltip for a preset row: what it is for, then what it configures. */
   protected describe(preset: Preset): string {
     const what = this.isOrphan(preset)
-      ? `${preset.nodeType} — this engine no longer serves that node type`
+      ? this.translator.t('palette.orphan', { type: preset.nodeType })
       : preset.label;
     return preset.description ? `${preset.description}\n${what}` : what;
   }

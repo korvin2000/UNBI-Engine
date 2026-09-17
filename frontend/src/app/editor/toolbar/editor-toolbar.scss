@@ -16,6 +16,23 @@
   align-items: center;
   gap: 9px;
   flex: none;
+  margin-left: -6px;
+  padding: 3px 6px;
+  border-radius: var(--radius);
+  transition: background var(--tempo) var(--ease);
+
+  &:hover {
+    background: var(--panel-raised);
+  }
+
+  &:hover .brand__mark {
+    border-color: var(--accent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
 }
 
 .brand__mark {
@@ -47,6 +64,44 @@
 
 .brand__chip--version {
   font-variant-numeric: tabular-nums;
+}
+
+// --- The document ----------------------------------------------------------
+// Which workflow is on the canvas. The dot is the only place "unsaved" is said, so it is not subtle.
+
+.document {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  max-width: 220px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-sunken);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: default;
+
+  &.is-untitled {
+    color: var(--text-faint);
+    font-style: italic;
+  }
+}
+
+.document__name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.document__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
 }
 
 // --- Transport ------------------------------------------------------------
@@ -147,7 +202,7 @@
   color: var(--text-faint);
 }
 
-.problems-backdrop {
+.menu-backdrop {
   position: fixed;
   inset: 0;
   z-index: 30;
@@ -235,7 +290,9 @@
   gap: 3px;
   flex: none;
 
-  button {
+  // The icon buttons only: the favourites menu inside `.favorites-wrap` draws its own rows.
+  > button,
+  .favorites-wrap > button {
     display: grid;
     place-items: center;
     width: 32px;
@@ -267,7 +324,120 @@
       color: var(--accent);
       background: var(--accent-soft);
     }
+
+    // Clear, armed: the next click discards unsaved work, and the button says so in red.
+    &.is-armed {
+      color: var(--danger);
+      background: color-mix(in srgb, var(--danger) 16%, transparent);
+      animation: arm-pulse 0.9s ease-in-out infinite;
+    }
   }
+}
+
+@keyframes arm-pulse {
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 35%, transparent);
+  }
+}
+
+// --- Favourites menu --------------------------------------------------------
+
+.favorites-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu {
+  position: absolute;
+  z-index: 31;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 260px;
+  max-width: 360px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-dialog);
+  animation: problems-in 120ms var(--ease);
+}
+
+.menu__title {
+  padding: 4px 8px 6px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: left;
+  transition: background var(--tempo) var(--ease), color var(--tempo) var(--ease);
+
+  app-icon {
+    flex: none;
+    color: var(--warn);
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: var(--panel-sunken);
+    color: var(--text);
+    outline: none;
+  }
+
+  &.is-current {
+    color: var(--text);
+  }
+}
+
+.menu__item--danger app-icon {
+  color: var(--danger);
+}
+
+.menu__label {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu__divider {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border);
+}
+
+.menu__empty {
+  margin: 0;
+  padding: 6px 8px 8px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.menu__ask {
+  margin: 0;
+  padding: 4px 8px 8px;
+  color: var(--warn);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.menu__ask-actions {
+  display: flex;
+  flex-direction: column;
 }
 
 .actions__divider {
@@ -331,7 +501,8 @@
 }
 
 @media (max-width: 880px) {
-  .brand__name {
+  .brand__name,
+  .document {
     display: none;
   }
 

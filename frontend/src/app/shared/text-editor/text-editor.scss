@@ -6,14 +6,16 @@
 // dialog that grows with the text would put the end of a long one off screen exactly when it
 // matters most — so the frame is fixed and the text scrolls inside it.
 
+// The layer this dialog paints on. `display: contents` gives the host no box of its own, so the
+// value has to sit on the scrim and the frame, which are what actually paint.
+$layer: 110;
+
 :host {
-  position: fixed;
-  inset: 0;
-  z-index: 110;
   display: contents;
 }
 
 .scrim {
+  z-index: $layer;
   position: fixed;
   inset: 0;
   background: rgba(6, 9, 15, 0.62);
@@ -22,6 +24,7 @@
 }
 
 .dialog {
+  z-index: $layer;
   position: fixed;
   top: 50%;
   left: 50%;

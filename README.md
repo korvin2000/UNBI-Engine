@@ -32,9 +32,10 @@ npm --prefix frontend install && npm --prefix frontend start
 Then open <http://localhost:4200>. The status pill in the toolbar turns green when the editor has
 found the engine.
 
-To try the shipped example, press the ★ button in the toolbar: it builds a
-*scan → filter → search → report* pipeline. Point **Scan Directory** at a folder — the folder button
-on the field opens a browser for the machine the *engine* runs on — set a search term, and press ▶.
+To try the shipped example, open the ★ menu in the toolbar and choose **Example workflow**: it
+builds a *scan → filter → search → report* pipeline. Point **Scan Directory** at a folder — the
+folder button on the field opens a browser for the machine the *engine* runs on — set a search term,
+and press ▶.
 
 ### Around the editor
 
@@ -55,6 +56,10 @@ on the field opens a browser for the machine the *engine* runs on — set a sear
 | The switch in a node's footer | leave that node, and everything downstream of it, out of the run |
 | `Ctrl+Enter` · `Ctrl+Z` / `Ctrl+Shift+Z` · `Ctrl+D` · `Ctrl+A` · `Del` | run · undo/redo · duplicate · select all · delete |
 | Wheel, the `+`/`−` buttons, or the `%` label | zoom; the ⛶ button fits the whole graph |
+| The **UNBI** mark in the top-left corner | the application settings: language, where the engine keeps its files, endpoint profiles and keys, and export/import of everything as one `.ucfg` file |
+| The chip beside it | which workflow is on the canvas, with a dot while it has unsaved changes |
+| ★ | the favourites menu: the workflows kept in the library's `favorites/` folder, the built-in example, and a way to star the one on the canvas |
+| The folder and the disk (`Ctrl+O` · `Ctrl+S` · `Ctrl+Shift+S`) | the workflow library on the engine: open · save · save under a new name. Import from file and export to file live inside the library dialog |
 
 ### No JDK installed?
 
@@ -75,10 +80,15 @@ backend/
   llm/             the LLM subsystem: wire formats, credentials, pacing, templates
   nodes/           one class per node, auto-registered
   presets/         saved node configurations, stored apart from workflows
+  profiles/        named configurations nodes refer to by id (endpoints)
+  settings/        settings.json, the relocatable directories, .ucfg export/import
+  workflows/       the workflow library: one file per workflow, favourites in a folder
   transport/       WebSocket handler, REST catalog, JSON codecs
 frontend/src/app/
-  core/            type mirror, graph store + commands, catalog, presets, engine socket
+  core/            type mirror, graph store + commands, catalog, presets, engine socket,
+                   i18n, settings, the workflow library and session
   editor/          canvas, palette, toolbar, the settings panel beside the canvas
+  shared/          the dialogs: pickers, profiles, prompt editor, settings, library
   widgets/         the input controls a node can declare
 docs/ARCHITECTURE.md   the design, and why
 docs/LLM-NODES.md      the LLM pack, and why it is shaped that way
@@ -109,8 +119,8 @@ Add rows there first; one of the two suites will go red until both agree.
 ## Tests
 
 ```bash
-./gradlew :backend:test          # 433 tests
-npm --prefix frontend test       # 122 tests (through the Angular test builder — `vitest` alone lacks the JIT compiler)
+./gradlew :backend:test          # 472 tests
+npm --prefix frontend test       # 173 tests (through the Angular test builder — `vitest` alone lacks the JIT compiler)
 ```
 
 The backend suite includes an end-to-end test that boots the application, fetches the catalog over
@@ -171,6 +181,37 @@ which writes it to `~/.unbi-engine/credentials.properties` and never reads it ba
 resolved at call time from the environment (`UNBI_LLM_KEY_<NAME>`), from
 `~/.unbi-engine/credentials.properties`, or — for `codex` — from the credentials the `codex` CLI
 already wrote. `GET /api/options` returns credential *names* only; nothing serves a value.
+
+### Settings, storage and migration
+
+Click the **UNBI** mark in the top-left corner. Everything the engine keeps lives under one home
+directory — `~/.unbi-engine`, or wherever `unbi.home` points — and the settings page shows where:
+
+```
+~/.unbi-engine/
+  settings.json               where the two directories below are, and the editor's preferences
+  credentials.properties  ┐
+  profiles/<schema>/*.json├── the data directory: relocatable as one unit from Settings → Storage
+  presets/*.json          ┘
+  workflows/                  the workflow library: relocatable on its own
+    favorites/                the ones behind the ★ button
+    <name>.unbi.json
+```
+
+Only `settings.json` has to stay put; the two directories can be pointed anywhere, with the
+existing files copied across (never moved — the originals stay until you delete them). A workflow
+is a file named after itself, so the library is a folder you can browse, back up and drop files
+into. Starring a workflow moves its file into `favorites/`.
+
+**Backup & migration** exports any selection of these — endpoint profiles, API keys, presets and
+saved prompts, workflows, preferences — as one `.ucfg` file: a zip, AES-256 encrypted when you set
+a password, that 7-Zip opens too. Keys are secrets, so the checklist says so and warns when they
+would travel in plain text. Importing reads the file's manifest first — what is inside, whether a
+password is needed — then applies your choice for anything that already exists: keep what is here,
+replace it, or keep both. Directory locations are never exported; they belong to the machine.
+
+The editor is prepared for other languages — the language setting is on the General page — but ships
+English only. Node names and hints come from the engine and are not translated.
 
 ### Checking a configuration before you run it
 

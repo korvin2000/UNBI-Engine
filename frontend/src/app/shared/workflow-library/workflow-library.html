@@ -1,0 +1,186 @@
+@if (mode(); as active) {
+  <div class="scrim" (click)="close()"></div>
+
+  <div
+    class="dialog"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-label]="(active === 'save' ? 'library.saveTitle' : 'library.title') | t"
+  >
+    <header class="dialog__head">
+      <app-icon name="documents" [size]="15" />
+      <h2>{{ (active === 'save' ? 'library.saveTitle' : 'library.title') | t }}</h2>
+      <span class="dialog__sub" [attr.title]="directory()">{{ directory() || ('library.subtitle' | t) }}</span>
+      <button class="dialog__close" type="button" [attr.aria-label]="'common.close' | t" (click)="close()">
+        <app-icon name="close" [size]="14" />
+      </button>
+    </header>
+
+    @if (active === 'save') {
+      <div class="name">
+        <label class="field-row">
+          <span class="field-row__label">{{ 'library.name' | t }}</span>
+          <input
+            class="field"
+            type="text"
+            appAutofocus
+            [placeholder]="'library.namePlaceholder' | t"
+            [value]="name()"
+            (input)="setName($event)"
+            (keydown.enter)="confirm()"
+          />
+        </label>
+      </div>
+    }
+
+    <div class="search">
+      <app-icon class="search__icon" name="search" [size]="14" />
+      <input
+        class="search__input"
+        type="search"
+        [placeholder]="'library.search' | t"
+        [attr.aria-label]="'library.search' | t"
+        [value]="query()"
+        (input)="onSearch($event)"
+      />
+    </div>
+
+    <div class="dialog__body">
+      @if (loadError()) {
+        <p class="notice notice--error">{{ loadError() }}</p>
+      }
+
+      <ul class="list" role="listbox">
+        @for (entry of entries(); track entry.id) {
+          <li
+            class="entry"
+            role="option"
+            tabindex="0"
+            [class.is-active]="entry.id === selectedId()"
+            [attr.aria-selected]="entry.id === selectedId()"
+            (click)="select(entry)"
+            (dblclick)="activate(entry)"
+            (keydown.enter)="activate(entry)"
+          >
+            <button
+              class="entry__star"
+              type="button"
+              [class.is-on]="entry.favorite"
+              [attr.title]="(entry.favorite ? 'library.unstar' : 'library.star') | t"
+              [attr.aria-pressed]="entry.favorite"
+              (click)="toggleFavorite(entry, $event)"
+            >
+              <app-icon name="star" [size]="13" [filled]="entry.favorite" [weight]="entry.favorite ? 0 : 1.6" />
+            </button>
+
+            <span class="entry__main">
+              @if (renaming()?.id === entry.id) {
+                <input
+                  class="field entry__rename"
+                  type="text"
+                  appAutofocus
+                  [value]="renaming()!.draft"
+                  (input)="setRenameDraft($event)"
+                  (keydown.enter)="commitRename($event)"
+                  (keydown.escape)="cancelRename($event)"
+                  (blur)="commitRename($event)"
+                  (click)="$event.stopPropagation()"
+                  (dblclick)="$event.stopPropagation()"
+                />
+              } @else {
+                <span class="entry__name">{{ entry.name }}</span>
+                <span class="entry__meta">{{ 'library.updated' | t: { when: when(entry) } }}</span>
+              }
+            </span>
+
+            <span class="entry__actions">
+              <button
+                class="entry__action"
+                type="button"
+                [attr.title]="'common.rename' | t"
+                [attr.aria-label]="'common.rename' | t"
+                (click)="startRename(entry, $event)"
+              >
+                <app-icon name="edit" [size]="12" />
+              </button>
+              <button
+                class="entry__action entry__action--delete"
+                type="button"
+                [attr.title]="'common.delete' | t"
+                [attr.aria-label]="'common.delete' | t"
+                (click)="askDelete(entry, $event)"
+              >
+                <app-icon name="trash" [size]="12" />
+              </button>
+            </span>
+          </li>
+        } @empty {
+          <li class="list__empty">
+            @if (query()) {
+              <p>{{ 'library.noMatch' | t: { query: query() } }}</p>
+            } @else {
+              <p>{{ 'library.empty' | t }}</p>
+              <p class="list__hint">{{ 'library.emptyHint' | t }}</p>
+            }
+          </li>
+        }
+      </ul>
+    </div>
+
+    <footer class="dialog__foot">
+      @if (confirming(); as ask) {
+        <span class="dialog__status is-warn">
+          @switch (ask.kind) {
+            @case ('delete') {
+              {{ 'library.deleteQuestion' | t: { name: ask.entry?.name ?? '' } }}
+            }
+            @case ('replace') {
+              {{ 'library.replaceQuestion' | t: { name: ask.entry?.name ?? '' } }}
+            }
+            @default {
+              {{ 'library.unsaved' | t: { name: currentName() || ('toolbar.untitled' | t) } }}
+            }
+          }
+        </span>
+        <button class="button" type="button" (click)="cancelConfirm()">{{ 'common.cancel' | t }}</button>
+        <button
+          class="button"
+          type="button"
+          [class.button--danger]="ask.kind === 'delete'"
+          [class.button--primary]="ask.kind !== 'delete'"
+          (click)="proceed()"
+        >
+          @switch (ask.kind) {
+            @case ('delete') {
+              {{ 'common.delete' | t }}
+            }
+            @case ('replace') {
+              {{ 'library.replace' | t: { name: ask.entry?.name ?? '' } }}
+            }
+            @default {
+              {{ 'library.openDiscard' | t }}
+            }
+          }
+        </button>
+      } @else {
+        <button class="button" type="button" (click)="importFile()">
+          <app-icon name="open" [size]="12" />
+          {{ 'library.import' | t }}
+        </button>
+        <button class="button" type="button" (click)="exportFile()">
+          <app-icon name="save" [size]="12" />
+          {{ 'library.export' | t }}
+        </button>
+
+        <span class="dialog__status" [class.is-error]="notice()?.kind === 'error'" [class.is-ok]="notice()?.kind === 'ok'">
+          {{ notice()?.text }}
+        </span>
+
+        <button class="button" type="button" (click)="close()">{{ 'common.cancel' | t }}</button>
+        <button class="button button--primary" type="button" [disabled]="!canConfirm()" (click)="confirm()">
+          {{ (active === 'save' ? 'common.save' : 'common.open') | t }}
+        </button>
+      }
+    </footer>
+  </div>
+}

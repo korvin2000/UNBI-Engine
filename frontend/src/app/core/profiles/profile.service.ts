@@ -37,6 +37,14 @@ export interface ProfileTestResult {
   readonly details: readonly string[];
 }
 
+/** One kind of profile the engine has, as the settings page lists them. */
+export interface ProfileSchemaSummary {
+  readonly id: string;
+  readonly label: string;
+  readonly testable: boolean;
+  readonly count: number;
+}
+
 /** What a widget asks the dialog to open with, and what it gets back: the id to point at. */
 export interface ProfileEditRequest {
   readonly schema: string;
@@ -70,6 +78,7 @@ export class ProfileService {
   private readonly config = inject(ENGINE_CONFIG);
 
   private readonly states = signal<ReadonlyMap<string, SchemaState>>(new Map());
+  private readonly known = signal<readonly ProfileSchemaSummary[]>([]);
   private readonly request = signal<ProfileEditRequest | null>(null);
   private resolve: ((chosen: string | null) => void) | null = null;
   private readonly loading = new Set<string>();
@@ -77,9 +86,23 @@ export class ProfileService {
   /** Non-null while the dialog is open; the dialog renders from this. */
   readonly editing = this.request.asReadonly();
 
+  /** Every schema the engine has, with a count each: what the settings page lists. */
+  readonly schemas = this.known.asReadonly();
+
   /** Everything known about one schema, as a signal the caller can compute from. */
   state(schema: string) {
     return computed(() => this.states().get(schema) ?? EMPTY);
+  }
+
+  /** Fetches the list of schemas, for a page that knows none by name. */
+  loadSchemas(): void {
+    this.http
+      .get<{ schemas?: readonly ProfileSchemaSummary[] }>(`${this.config.httpBase}/api/profiles`)
+      .pipe(
+        tap((body) => this.known.set(body.schemas ?? [])),
+        catchError(() => of(null)),
+      )
+      .subscribe();
   }
 
   /** Fetches a schema and its profiles, once, unless asked to refresh. */

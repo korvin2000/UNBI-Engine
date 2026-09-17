@@ -10,6 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.SequencedSet;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,7 +25,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>Read fresh on every lookup rather than cached. A key added while the engine is running should
  * work on the next run, not after a restart; the file is a few hundred bytes and a call to an LLM
- * takes seconds.
+ * takes seconds. The path is looked up fresh too, because the data directory can be relocated from
+ * the settings page while the engine runs.
  */
 @Component
 public class PropertiesFileCredentials implements CredentialSource {
@@ -33,16 +35,16 @@ public class PropertiesFileCredentials implements CredentialSource {
 
     private static final Logger log = LoggerFactory.getLogger(PropertiesFileCredentials.class);
 
-    private final Path file;
+    private final Supplier<Path> file;
 
     @Autowired
     public PropertiesFileCredentials(DataDirectory data) {
-        this(data.file(FILE_NAME));
+        this.file = () -> data.file(FILE_NAME);
     }
 
     /** Package-private: the test seam, and the reason the constructor above is annotated. */
     PropertiesFileCredentials(Path file) {
-        this.file = file;
+        this.file = () -> file;
     }
 
     @Override
@@ -80,7 +82,7 @@ public class PropertiesFileCredentials implements CredentialSource {
 
     /** Where a user should put the file, for the message shown when a reference is not found. */
     public Path location() {
-        return file;
+        return file.get();
     }
 
     /**
@@ -107,6 +109,7 @@ public class PropertiesFileCredentials implements CredentialSource {
     }
 
     private void write(Properties properties) throws IOException {
+        var file = location();
         if (file.getParent() != null) {
             Files.createDirectories(file.getParent());
         }
@@ -117,6 +120,7 @@ public class PropertiesFileCredentials implements CredentialSource {
 
     private Properties load() {
         var properties = new Properties();
+        var file = location();
         if (!Files.isRegularFile(file)) {
             return properties;
         }

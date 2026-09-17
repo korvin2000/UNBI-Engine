@@ -1,4 +1,5 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
+import { Observable, catchError, map, of, switchMap, tap, throwError } from 'rxjs';
 import { CatalogService } from '../core/catalog/catalog.service';
 import { GraphStore } from '../core/graph/graph-store';
 import {
@@ -7,6 +8,12 @@ import {
   WorkflowNode,
   clampNodeWidth,
 } from '../core/graph/workflow.models';
+import { Translator } from '../core/i18n/translator';
+import { RunStore } from '../core/runtime/run-store';
+import { messageOf } from '../core/settings/settings.service';
+import { LibraryEntry, WorkflowLibraryService } from '../core/workflows/workflow-library.service';
+import { WorkflowSession } from '../core/workflows/workflow-session';
+import { download } from '../shared/download';
 
 /** The on-disk format. Versioned from the first release so a later change has something to migrate from. */
 interface WorkflowFile {
@@ -17,47 +24,137 @@ interface WorkflowFile {
 }
 
 /**
- * Saving, opening, and the built-in example.
+ * Everything that moves a workflow between the canvas and somewhere else.
  *
- * Files go through the browser's download and file-input paths rather than the File System Access
- * API, which is still not available everywhere and would need a fallback anyway.
+ * The library on the engine is where workflows live: Save writes there, Open reads from there, and
+ * a favourite is a workflow the engine keeps in the library's favorites/ folder. Files through the
+ * browser remain as import and export — the way a workflow leaves for a colleague, or arrives from
+ * one — and the built-in example is a third way onto the canvas. All of them go through the
+ * session, which is what keeps "unsaved changes" true.
  */
 @Injectable({ providedIn: 'root' })
 export class WorkflowFileService {
   private readonly graph = inject(GraphStore);
   private readonly catalog = inject(CatalogService);
+  private readonly library = inject(WorkflowLibraryService);
+  private readonly session = inject(WorkflowSession);
+  private readonly runs = inject(RunStore);
+  private readonly translator = inject(Translator);
 
-  save(): void {
-    const blob = new Blob([serialiseWorkflow(this.graph.doc())], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `workflow-${new Date().toISOString().slice(0, 10)}.unbi.json`;
-    anchor.click();
-    // Revoking immediately can cancel the download in some browsers; one turn later is enough.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+  private readonly failure = signal('');
+
+  /** The last thing that went wrong opening or saving, for whoever is showing it. */
+  readonly error = this.failure.asReadonly();
+
+  /**
+   * Ctrl+S: write the current workflow over the entry it came from, or ask for a name.
+   *
+   * @returns the saved entry, or null when a dialog was opened instead
+   */
+  save(): Observable<LibraryEntry | null> {
+    const current = this.session.current();
+    if (!current) {
+      this.library.show('save');
+      return of(null);
+    }
+    return this.saveAs(current.name, true);
   }
 
-  open(): void {
-    const picker = document.createElement('input');
-    picker.type = 'file';
-    picker.accept = '.json,application/json';
-    picker.onchange = async () => {
-      const file = picker.files?.[0];
-      if (!file) {
-        return;
-      }
-      try {
-        this.graph.load(parseWorkflow(await file.text()));
-      } catch (error) {
-        // A bad file is a user mistake, not a crash. Reported where they are looking.
-        console.error('Could not open that workflow', error);
-        window.alert(
-          error instanceof Error ? `Could not open that file: ${error.message}` : 'Could not open that file',
-        );
-      }
-    };
-    picker.click();
+  /** Ctrl+Shift+S: always ask for a name. */
+  saveAs(): void;
+  saveAs(name: string, overwrite: boolean): Observable<LibraryEntry>;
+  saveAs(name?: string, overwrite = false): Observable<LibraryEntry> | void {
+    if (name === undefined) {
+      this.library.show('save');
+      return;
+    }
+    return this.library.save(name, JSON.parse(serialiseWorkflow(this.graph.doc())), overwrite).pipe(
+      tap((saved) => {
+        this.session.markSaved(saved);
+        this.failure.set('');
+      }),
+      catchError((error: unknown) => {
+        this.failure.set(messageOf(error));
+        return throwError(() => error);
+      }),
+    );
+  }
+
+  showLibrary(): void {
+    this.library.show('open');
+  }
+
+  /** Puts a library entry on the canvas. The caller has already dealt with unsaved changes. */
+  open(entry: LibraryEntry): Observable<LibraryEntry> {
+    return this.library.read(entry.id, parseWorkflowObject).pipe(
+      tap(({ entry: found, document }) => {
+        this.session.open(found, document);
+        this.runs.reset();
+        this.failure.set('');
+      }),
+      map(({ entry: found }) => found),
+      catchError((error: unknown) => {
+        this.failure.set(messageOf(error));
+        return throwError(() => error);
+      }),
+    );
+  }
+
+  /** Stars or unstars a library entry, keeping the session's idea of it current. */
+  setFavorite(entry: LibraryEntry, favorite: boolean): Observable<LibraryEntry> {
+    return this.library.setFavorite(entry.id, favorite).pipe(tap((saved) => this.session.updateEntry(saved)));
+  }
+
+  rename(entry: LibraryEntry, name: string): Observable<LibraryEntry> {
+    return this.library.rename(entry.id, name).pipe(tap((saved) => this.session.updateEntry(saved, entry.id)));
+  }
+
+  delete(entry: LibraryEntry): Observable<void> {
+    return this.library.delete(entry.id).pipe(tap(() => this.session.forgetEntry(entry.id)));
+  }
+
+  /** A blank canvas. The caller has already dealt with unsaved changes. */
+  startNew(): void {
+    this.session.startNew();
+    this.runs.reset();
+  }
+
+  /** Downloads the current workflow as a file, for sharing outside the library. */
+  exportToFile(): void {
+    const blob = new Blob([serialiseWorkflow(this.graph.doc())], { type: 'application/json' });
+    const name = this.session.name() || `workflow-${new Date().toISOString().slice(0, 10)}`;
+    download(blob, `${name}.unbi.json`);
+  }
+
+  /**
+   * Opens a workflow file from the browser onto the canvas, untitled.
+   *
+   * Files go through the browser's file-input path rather than the File System Access API, which
+   * is still not available everywhere and would need a fallback anyway.
+   *
+   * @returns whether a file was chosen and opened
+   */
+  importFromFile(): Observable<boolean> {
+    return pickFile('.json,application/json').pipe(
+      switchMap(async (file) => {
+        if (!file) {
+          return false;
+        }
+        try {
+          this.session.openUntitled(parseWorkflow(await file.text()));
+          this.runs.reset();
+          this.failure.set('');
+          return true;
+        } catch (error) {
+          this.failure.set(
+            this.translator.t('library.importFailed', {
+              reason: error instanceof Error ? error.message : String(error),
+            }),
+          );
+          return false;
+        }
+      }),
+    );
   }
 
   /**
@@ -119,8 +216,25 @@ export class WorkflowFileService {
       { id: 'e3', sourceNode: 'search', sourcePort: 'matches', targetNode: 'report', targetPort: 'data' },
     ];
 
-    this.graph.load({ nodes, edges });
+    this.session.openUntitled({ nodes, edges });
+    this.runs.reset();
   }
+}
+
+/** One file from the user, or null when the picker was dismissed. */
+function pickFile(accept: string): Observable<File | null> {
+  return new Observable<File | null>((subscriber) => {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = accept;
+    picker.onchange = () => {
+      subscriber.next(picker.files?.[0] ?? null);
+      subscriber.complete();
+    };
+    // There is no reliable "cancelled" event; a dismissed picker simply never fires. The
+    // subscriber stays pending, which costs nothing and reports nothing false.
+    picker.click();
+  });
 }
 
 /**
@@ -143,7 +257,11 @@ export function serialiseWorkflow(doc: WorkflowDoc): string {
 
 /** Validates enough of an opened file that a malformed one fails here rather than mid-render. */
 export function parseWorkflow(text: string): WorkflowDoc {
-  const parsed: unknown = JSON.parse(text);
+  return parseWorkflowObject(JSON.parse(text));
+}
+
+/** The same validation for a document that already arrived parsed — from the library, say. */
+export function parseWorkflowObject(parsed: unknown): WorkflowDoc {
   if (typeof parsed !== 'object' || parsed === null) {
     throw new Error('not a workflow file');
   }

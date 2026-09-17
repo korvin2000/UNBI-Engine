@@ -6,19 +6,25 @@ import * as commands from './core/graph/commands';
 import { GraphStore } from './core/graph/graph-store';
 import { EngineSocket } from './core/runtime/engine-socket';
 import { RunStore } from './core/runtime/run-store';
+import { SettingsService } from './core/settings/settings.service';
+import { WorkflowLibraryService } from './core/workflows/workflow-library.service';
+import { WorkflowSession } from './core/workflows/workflow-session';
 import { CanvasSelection } from './editor/canvas/canvas-selection';
 import { FlowCanvas } from './editor/canvas/flow-canvas';
 import { NodeInspector } from './editor/inspector/node-inspector';
 import { NodePalette } from './editor/palette/node-palette';
 import { EditorToolbar } from './editor/toolbar/editor-toolbar';
+import { WorkflowFileService } from './editor/workflow-file.service';
 import { FileBrowser } from './shared/file-browser/file-browser';
 import { FileBrowserService } from './shared/file-browser/file-browser.service';
 import { PresetDialog } from './shared/preset-dialog/preset-dialog';
 import { ProfileDialog } from './shared/profile-dialog/profile-dialog';
 import { ProfileService } from './core/profiles/profile.service';
 import { CredentialService } from './core/credentials/credential.service';
+import { SettingsDialog } from './shared/settings-dialog/settings-dialog';
 import { TextEditor } from './shared/text-editor/text-editor';
 import { TextEditorService } from './shared/text-editor/text-editor.service';
+import { WorkflowLibrary } from './shared/workflow-library/workflow-library';
 
 /**
  * The application shell: toolbar across the top, palette on the left, canvas filling the rest.
@@ -38,6 +44,8 @@ import { TextEditorService } from './shared/text-editor/text-editor.service';
     PresetDialog,
     ProfileDialog,
     TextEditor,
+    SettingsDialog,
+    WorkflowLibrary,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
@@ -54,28 +62,68 @@ export class App implements OnInit {
   private readonly textEditor = inject(TextEditorService);
   private readonly profiles = inject(ProfileService);
   private readonly credentials = inject(CredentialService);
+  private readonly settings = inject(SettingsService);
+  private readonly library = inject(WorkflowLibraryService);
+  private readonly session = inject(WorkflowSession);
+  private readonly files = inject(WorkflowFileService);
 
   ngOnInit(): void {
     this.catalog.load();
-    // Neither is worth a loading state: a dropdown with no server-side options still renders its
-    // static ones, and an empty Presets tab is a true statement about a fresh engine.
+    // None of these is worth a loading state: a dropdown with no server-side options still renders
+    // its static ones, an empty Presets tab is a true statement about a fresh engine, and the
+    // settings arrive with the language — English until they do, which is what English is for.
     this.options.load();
     this.presets.load();
     this.credentials.load();
+    this.settings.load();
+    this.library.load();
     this.socket.connect();
+  }
+
+  /** The browser's own "leave this page?" — the one safety net a reload cannot get past. */
+  @HostListener('window:beforeunload', ['$event'])
+  protected onBeforeUnload(event: BeforeUnloadEvent): void {
+    if (this.session.dirty() && this.graph.nodeCount() > 0) {
+      event.preventDefault();
+    }
   }
 
   @HostListener('document:keydown', ['$event'])
   protected onKeydown(event: KeyboardEvent): void {
-    // Never steal a keystroke from a field the user is typing in, or from the modal picker — the
-    // dialog has its own Escape and Enter, and Delete there must not reach the canvas behind it.
+    // Never steal a keystroke from the modal dialogs — each has its own Escape and Enter, and
+    // Delete there must not reach the canvas behind it.
     if (
-      isTextEntry(event.target) ||
       this.browser.open() !== null ||
       this.presets.pending() !== null ||
       this.profiles.editing() !== null ||
-      this.textEditor.open() !== null
+      this.textEditor.open() !== null ||
+      this.settings.open() !== null ||
+      this.library.open() !== null
     ) {
+      return;
+    }
+
+    const modifier = event.ctrlKey || event.metaKey;
+    const key = event.key.toLowerCase();
+
+    // Save and Open are taken even from inside a text field: the browser's own Ctrl+S ("save this
+    // page") and Ctrl+O would otherwise fire from wherever the cursor happens to be.
+    if (modifier && key === 's') {
+      event.preventDefault();
+      if (event.shiftKey) {
+        this.files.saveAs();
+      } else {
+        this.files.save().subscribe({ error: () => undefined });
+      }
+      return;
+    }
+    if (modifier && key === 'o') {
+      event.preventDefault();
+      this.files.showLibrary();
+      return;
+    }
+
+    if (isTextEntry(event.target)) {
       return;
     }
 
@@ -84,7 +132,6 @@ export class App implements OnInit {
     // rather than the text in the filter box — both from a keystroke aimed at the panel.
     const inPanel = isInsideInspector(event.target);
 
-    const modifier = event.ctrlKey || event.metaKey;
     if (!modifier) {
       // Delete and Backspace both remove the selection: which one people reach for is a habit, and
       // an editor that honours only one of them feels broken to half its users.
@@ -94,7 +141,6 @@ export class App implements OnInit {
       return;
     }
 
-    const key = event.key.toLowerCase();
     if (inPanel && (key === 'a' || key === 'd')) {
       return;
     }

@@ -1,0 +1,423 @@
+@if (page(); as active) {
+  <div class="scrim" (click)="close()"></div>
+
+  <div class="dialog" role="dialog" aria-modal="true" [attr.aria-label]="'settings.title' | t">
+    <header class="dialog__head">
+      <app-icon name="settings" [size]="15" />
+      <h2>{{ 'settings.title' | t }}</h2>
+      <span class="dialog__sub">{{ state()?.file || ('settings.subtitle' | t) }}</span>
+      <button class="dialog__close" type="button" [attr.aria-label]="'common.close' | t" (click)="close()">
+        <app-icon name="close" [size]="14" />
+      </button>
+    </header>
+
+    <div class="dialog__body">
+      <nav class="rail">
+        @for (entry of pages; track entry.id) {
+          <button
+            class="rail__item"
+            type="button"
+            [class.is-active]="entry.id === active"
+            [attr.aria-current]="entry.id === active ? 'page' : null"
+            (click)="goTo(entry.id)"
+          >
+            <app-icon [name]="entry.icon" [size]="14" />
+            <span>{{ entry.key | t }}</span>
+          </button>
+        }
+      </nav>
+
+      <section class="content">
+        @if (loadError()) {
+          <p class="notice notice--error">{{ loadError() }}</p>
+        }
+
+        @switch (active) {
+          <!-- ------------------------------------------------------------ General -->
+          @case ('general') {
+            <h3 class="content__title">{{ 'settings.page.general' | t }}</h3>
+
+            @if (state()?.error) {
+              <p class="notice notice--warn">{{ 'settings.general.fileError' | t: { reason: state()!.error } }}</p>
+            }
+
+            <div class="field-row field-row--narrow">
+              <span class="field-row__label">{{ 'settings.general.language' | t }}</span>
+              <app-node-widget
+                [spec]="languageSpec()"
+                [value]="language()"
+                [label]="'settings.general.language' | t"
+                (valueChange)="setLanguage($event)"
+              />
+              <p class="field-row__hint">{{ 'settings.general.languageHint' | t }}</p>
+            </div>
+
+            @if (generalNotice(); as notice) {
+              <p class="notice" [class.notice--ok]="notice.kind === 'ok'" [class.notice--error]="notice.kind === 'error'">
+                {{ notice.text }}
+              </p>
+            }
+          }
+
+          <!-- ------------------------------------------------------------ Storage -->
+          @case ('storage') {
+            <h3 class="content__title">{{ 'settings.page.storage' | t }}</h3>
+
+            @if (storageNotice(); as notice) {
+              <p class="notice" [class.notice--ok]="notice.kind === 'ok'" [class.notice--error]="notice.kind === 'error'">
+                {{ notice.text }}
+              </p>
+            }
+
+            @for (location of locations(); track location.target) {
+              <div class="location">
+                <h4 class="location__title">{{ location.titleKey | t }}</h4>
+                <p class="location__hint">{{ location.hintKey | t }}</p>
+
+                <div class="location__path">
+                  <app-icon name="folder" [size]="13" />
+                  <code>{{ location.effective }}</code>
+                  @if (!location.configured) {
+                    <span class="chip" [attr.title]="'settings.storage.usingDefault' | t">{{ 'common.default' | t }}</span>
+                  }
+                </div>
+
+                <ul class="tree">
+                  @for (line of location.tree; track line.name) {
+                    <li>
+                      <app-icon [name]="line.icon" [size]="12" />
+                      <span class="tree__name">{{ line.name }}</span>
+                      @if (line.name !== 'favorites/') {
+                        <span class="tree__count">{{ line.countKey | n: line.count }}</span>
+                      } @else {
+                        <span class="tree__count">{{ 'settings.storage.favoritesFolder' | t }}</span>
+                      }
+                    </li>
+                  }
+                </ul>
+
+                @if (pending()?.target === location.target) {
+                  <div class="pending">
+                    <p class="pending__line">
+                      {{ 'settings.storage.moveTo' | t: { what: location.titleKey | t } }}
+                      <code>{{ pending()!.directory || ('common.default' | t) }}</code>
+                    </p>
+                    <label class="check">
+                      <input type="checkbox" [checked]="copyExisting()" (change)="setCopyExisting($event)" />
+                      <span class="check__box"><app-icon name="check" [size]="10" [weight]="3" /></span>
+                      <span class="check__text">{{ 'settings.storage.copyExisting' | t }}</span>
+                    </label>
+                    <div class="pending__actions">
+                      <button class="button button--primary" type="button" [disabled]="relocating()" (click)="applyRelocation()">
+                        {{ 'common.apply' | t }}
+                      </button>
+                      <button class="button" type="button" [disabled]="relocating()" (click)="cancelRelocation()">
+                        {{ 'common.cancel' | t }}
+                      </button>
+                    </div>
+                  </div>
+                } @else {
+                  <div class="location__actions">
+                    <button class="button" type="button" (click)="pickDirectory(location)">
+                      <app-icon name="open" [size]="12" />
+                      {{ 'common.change' | t }}
+                    </button>
+                    @if (location.configured) {
+                      <button class="button button--quiet" type="button" (click)="useDefault(location)">
+                        {{ 'settings.storage.useDefault' | t }}
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          }
+
+          <!-- ------------------------------------------------------------ Endpoints & keys -->
+          @case ('profiles') {
+            <h3 class="content__title">{{ 'settings.profiles.title' | t }}</h3>
+            <p class="content__hint">{{ 'settings.profiles.hint' | t }}</p>
+
+            <ul class="rows">
+              @for (schema of schemas(); track schema.id) {
+                <li class="row">
+                  <app-icon class="row__icon" name="plug" [size]="14" />
+                  <span class="row__main">
+                    <span class="row__name">{{ schema.label }}</span>
+                    <span class="row__detail">{{ 'settings.profiles.count' | n: schema.count }}</span>
+                  </span>
+                  <button class="button" type="button" (click)="manage(schema)">
+                    <app-icon name="edit" [size]="12" />
+                    {{ 'settings.profiles.manage' | t }}
+                  </button>
+                </li>
+              }
+            </ul>
+
+            <h3 class="content__title content__title--later">{{ 'settings.credentials.title' | t }}</h3>
+            <p class="content__hint">{{ 'settings.credentials.hint' | t }}</p>
+
+            @if (keyNotice(); as notice) {
+              <p class="notice" [class.notice--ok]="notice.kind === 'ok'" [class.notice--error]="notice.kind === 'error'">
+                {{ notice.text }}
+              </p>
+            }
+
+            <ul class="rows">
+              @for (key of keys(); track key.name) {
+                <li class="row">
+                  <app-icon class="row__icon" name="key" [size]="14" />
+                  <span class="row__main">
+                    <span class="row__name">{{ key.name }}</span>
+                    <span class="row__detail">{{ 'settings.credentials.source' | t: { source: key.source } }}</span>
+                  </span>
+                  @if (key.removable) {
+                    @if (removingKey() === key.name) {
+                      <button class="button button--danger" type="button" (click)="removeKey(key.name)">
+                        <app-icon name="trash" [size]="12" />
+                        {{ 'settings.credentials.removeForGood' | t }}
+                      </button>
+                      <button class="button" type="button" (click)="cancelRemoveKey()">{{ 'common.keep' | t }}</button>
+                    } @else {
+                      <button
+                        class="button button--quiet"
+                        type="button"
+                        [attr.title]="'settings.credentials.remove' | t: { name: key.name }"
+                        (click)="askRemoveKey(key.name)"
+                      >
+                        <app-icon name="trash" [size]="12" />
+                      </button>
+                    }
+                  }
+                </li>
+              } @empty {
+                <li class="rows__empty">{{ 'settings.credentials.empty' | t }}</li>
+              }
+            </ul>
+
+            <div class="add-key">
+              <label class="field-row">
+                <span class="field-row__label">{{ 'settings.credentials.name' | t }}</span>
+                <input class="field" type="text" placeholder="openrouter" [value]="newKeyName()" (input)="setNewKeyName($event)" />
+              </label>
+              <label class="field-row add-key__value">
+                <span class="field-row__label">{{ 'settings.credentials.value' | t }}</span>
+                <input
+                  class="field"
+                  type="password"
+                  autocomplete="off"
+                  placeholder="sk-…"
+                  [value]="newKeyValue()"
+                  (input)="setNewKeyValue($event)"
+                  (keydown.enter)="addKey()"
+                />
+              </label>
+              <button class="button add-key__button" type="button" [disabled]="!canAddKey()" (click)="addKey()">
+                <app-icon name="plus" [size]="12" />
+                {{ 'settings.credentials.add' | t }}
+              </button>
+            </div>
+          }
+
+          <!-- ------------------------------------------------------------ Backup & migration -->
+          @case ('backup') {
+            <h3 class="content__title">{{ 'settings.backup.exportTitle' | t }}</h3>
+            <p class="content__hint">{{ 'settings.backup.exportHint' | t }}</p>
+
+            <ul class="checklist">
+              @for (section of sections(); track section.id) {
+                <li>
+                  <label class="check" [class.is-disabled]="section.count === 0">
+                    <input
+                      type="checkbox"
+                      [checked]="chosen().has(section.id)"
+                      [disabled]="section.count === 0"
+                      (change)="toggleSection(section.id)"
+                    />
+                    <span class="check__box"><app-icon name="check" [size]="10" [weight]="3" /></span>
+                    <span class="check__text">
+                      <span>
+                        {{ sectionLabel(section.id, section.label) }}
+                        <span class="count">{{ 'settings.backup.items' | n: section.count }}</span>
+                        @if (section.sensitive) {
+                          <span class="chip chip--warn"><app-icon name="lock" [size]="9" /> {{ 'settings.sections.sensitive' | t }}</span>
+                        }
+                      </span>
+                      <span class="check__detail">{{ section.description }}</span>
+                    </span>
+                  </label>
+                </li>
+              }
+            </ul>
+
+            <label class="check check--protect">
+              <input type="checkbox" [checked]="protect()" (change)="setProtect($event)" />
+              <span class="check__box"><app-icon name="check" [size]="10" [weight]="3" /></span>
+              <span class="check__text">{{ 'settings.backup.protect' | t }}</span>
+            </label>
+
+            @if (protect()) {
+              <div class="passwords">
+                <label class="field-row">
+                  <span class="field-row__label">{{ 'settings.backup.password' | t }}</span>
+                  <input class="field" type="password" autocomplete="new-password" [value]="password()" (input)="setPassword($event)" />
+                </label>
+                <label class="field-row">
+                  <span class="field-row__label">{{ 'settings.backup.passwordAgain' | t }}</span>
+                  <input class="field" type="password" autocomplete="new-password" [value]="passwordAgain()" (input)="setPasswordAgain($event)" />
+                </label>
+              </div>
+              @if (passwordProblem(); as problem) {
+                <p class="field-row__hint field-row__hint--warn">{{ problem | t }}</p>
+              }
+            }
+
+            @if (plainKeys()) {
+              <p class="notice notice--warn">
+                <app-icon name="warning" [size]="12" />
+                {{ 'settings.backup.plainKeysWarning' | t }}
+              </p>
+            }
+
+            <div class="actions">
+              <button class="button button--primary" type="button" [disabled]="!canExport()" (click)="exportBundle()">
+                <app-icon name="save" [size]="12" />
+                {{ (exporting() ? 'settings.backup.exporting' : 'settings.backup.export') | t }}
+              </button>
+              @if (exportNotice(); as notice) {
+                <span class="actions__status" [class.is-ok]="notice.kind === 'ok'" [class.is-error]="notice.kind === 'error'">
+                  {{ notice.text }}
+                </span>
+              }
+            </div>
+
+            <h3 class="content__title content__title--later">{{ 'settings.backup.importTitle' | t }}</h3>
+            <p class="content__hint">{{ 'settings.backup.importHint' | t }}</p>
+
+            <div class="actions">
+              <label class="button">
+                <app-icon name="open" [size]="12" />
+                {{ (inspecting() ? 'settings.backup.inspecting' : 'settings.backup.chooseFile') | t }}
+                <input class="hidden-input" type="file" accept=".ucfg" (change)="chooseFile($event)" />
+              </label>
+              @if (importFile(); as file) {
+                <span class="actions__status">{{ file.name }}</span>
+              }
+            </div>
+
+            @if (importNotice(); as notice) {
+              <p class="notice" [class.notice--ok]="notice.kind === 'ok'" [class.notice--error]="notice.kind === 'error'">
+                {{ notice.text }}
+              </p>
+            }
+
+            @if (inspection(); as found) {
+              <p class="content__hint">{{ fileFrom() }}</p>
+
+              <ul class="checklist">
+                @for (section of found.sections; track section.id) {
+                  <li>
+                    <label class="check" [class.is-disabled]="!section.known || section.count === 0">
+                      <input
+                        type="checkbox"
+                        [checked]="importChosen().has(section.id)"
+                        [disabled]="!section.known || section.count === 0"
+                        (change)="toggleImportSection(section.id)"
+                      />
+                      <span class="check__box"><app-icon name="check" [size]="10" [weight]="3" /></span>
+                      <span class="check__text">
+                        <span>
+                          {{ sectionLabel(section.id, section.label || section.id) }}
+                          <span class="count">{{ 'settings.backup.items' | n: section.count }}</span>
+                          @if (!section.known) {
+                            <span class="chip">{{ 'settings.backup.unknownSection' | t }}</span>
+                          }
+                        </span>
+                      </span>
+                    </label>
+                  </li>
+                }
+              </ul>
+
+              @if (found.encrypted) {
+                <label class="field-row field-row--narrow">
+                  <span class="field-row__label"><app-icon name="lock" [size]="11" /> {{ 'settings.backup.password' | t }}</span>
+                  <input
+                    class="field"
+                    type="password"
+                    autocomplete="off"
+                    [placeholder]="'settings.backup.encrypted' | t"
+                    [value]="importPassword()"
+                    (input)="setImportPassword($event)"
+                  />
+                </label>
+              }
+
+              <div class="field-row">
+                <span class="field-row__label">{{ 'settings.backup.conflicts' | t }}</span>
+                <div class="radios" role="radiogroup">
+                  @for (option of conflictOptions; track option.value) {
+                    <label class="radio" [class.is-on]="conflicts() === option.value">
+                      <input type="radio" name="conflicts" [value]="option.value" [checked]="conflicts() === option.value" (change)="setConflicts(option.value)" />
+                      <span class="radio__dot"></span>
+                      <span>{{ option.key | t }}</span>
+                    </label>
+                  }
+                </div>
+              </div>
+
+              <div class="actions">
+                <button class="button button--primary" type="button" [disabled]="!canImport()" (click)="importBundle()">
+                  <app-icon name="open" [size]="12" />
+                  {{ (importing() ? 'settings.backup.importing' : 'settings.backup.import') | t }}
+                </button>
+              </div>
+            }
+
+            @if (report(); as done) {
+              <table class="report">
+                <tbody>
+                  @for (section of done.sections; track section.id) {
+                    <tr>
+                      <th>{{ sectionLabel(section.id, section.id) }}</th>
+                      <td>{{ 'settings.backup.reportImported' | t: { count: section.imported } }}</td>
+                      <td>{{ 'settings.backup.reportReplaced' | t: { count: section.replaced } }}</td>
+                      <td>{{ 'settings.backup.reportSkipped' | t: { count: section.skipped } }}</td>
+                      <td class="report__problems" [class.is-bad]="section.problems.length > 0">
+                        {{ 'settings.backup.reportProblems' | n: section.problems.length }}
+                      </td>
+                    </tr>
+                    @for (problem of section.problems; track $index) {
+                      <tr class="report__problem">
+                        <td colspan="5">{{ problem }}</td>
+                      </tr>
+                    }
+                  }
+                </tbody>
+              </table>
+            }
+          }
+
+          <!-- ------------------------------------------------------------ About -->
+          @case ('about') {
+            <h3 class="content__title">UNBI Engine</h3>
+            <p class="content__hint">{{ 'settings.about.blurb' | t }}</p>
+
+            <dl class="facts">
+              <dt>{{ 'settings.about.editor' | t }}</dt>
+              <dd>v{{ editorVersion }}</dd>
+              <dt>{{ 'settings.about.engine' | t }}</dt>
+              <dd>{{ state()?.engine?.version || '—' }}</dd>
+              <dt>{{ 'settings.about.home' | t }}</dt>
+              <dd><code>{{ state()?.file || '—' }}</code></dd>
+              <dt>{{ 'settings.about.java' | t }}</dt>
+              <dd>{{ state()?.engine?.java || '—' }}</dd>
+              <dt>{{ 'settings.about.os' | t }}</dt>
+              <dd>{{ state()?.engine?.os || '—' }}</dd>
+            </dl>
+          }
+        }
+      </section>
+    </div>
+  </div>
+}

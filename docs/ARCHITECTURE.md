@@ -27,6 +27,8 @@
 │  llm/        wire formats, credentials, pacing, templates │
 │  presets/    saved node configurations, on disk           │
 │  profiles/   named configurations nodes refer to by id    │
+│  settings/   settings.json, relocatable dirs, .ucfg       │
+│  workflows/  the library: one file each, favorites/       │
 │  core/       pure Java: types, graph, validation, SPI     │
 └───────────────────────────────────────────────────────────┘
 ```
@@ -153,6 +155,9 @@ src/app/
     presets/      saved node configurations, fetched from the engine
     profiles/     engine-side named configurations (endpoints), and the dialog that edits them
     credentials/  the names of the secrets the engine holds — never their values
+    i18n/         Translator (signals), the `t` and `n` pipes, messages/en.ts — see §10
+    settings/     the engine's settings, and the export/import calls
+    workflows/    the workflow library on the engine, and the session (which file, dirty?)
     engine.config.ts   where the backend lives, as an injection token
   editor/
     canvas/       Foblex wiring + the node component
@@ -166,7 +171,10 @@ src/app/
     preset-dialog/ naming a preset before it is saved
     profile-dialog/ creating, testing, editing and deleting profiles, from fields the engine declares
     text-editor/  the full-window prompt editor, and the saved-prompt library behind it
+    settings-dialog/ the application settings: general, storage, endpoints & keys, backup, about
+    workflow-library/ open a workflow from the engine, or save the one on the canvas to it
 styles/           tokens.scss — the palette, per-category accents, per-type port colours
+                  dialog.scss — the shared shape of a modal, as mixins
 ```
 
 A node's widgets live **in the node**, as in the reference UI; the inspector panel is a second view
@@ -552,7 +560,8 @@ configured node — and means there is exactly one place to delete it from.
 
 Named so they are choices rather than oversights: WebGL renderer (the DOM path is behind an
 interface, so it stays a swap), subgraphs/groups, collaborative editing, node versioning and graph
-migration, authentication, persistent run history, a real settings store.
+migration, authentication, persistent run history. A settings store, a workflow library and
+settings migration were added later — [§10](#10-settings-the-workflow-library-and-bundles).
 
 The LLM pack has its own list of deliberate omissions and its own reasoning — see
 [LLM-NODES.md](LLM-NODES.md).
@@ -575,3 +584,62 @@ extensibility claims were real. What it needed:
 What it did *not* need: a change to the type lattice, the graph validator, the execution engine, the
 registry, or any existing node. The one thing that did have to change — `Widget` — changed because
 it is sealed, which is exactly the failure mode sealing exists to produce.
+
+## 10. Settings, the workflow library and bundles
+
+Three things were missing for anyone with a second machine: a place to keep workflows other than a
+downloads folder, a way to carry profiles, keys and presets across, and any settings at all. They
+share one design and one page — the dialog behind the brand mark — and the decisions are these.
+
+**One fixed home, two relocatable directories.** `settings.json` lives in `~/.unbi-engine` (or
+`unbi.home`) and cannot move, because a setting that says where the settings are is a setting nobody
+can find. Everything else can: the *data* directory (profiles, credentials, presets) and the
+*workflows* directory are paths in that file, blank for the default. `DataDirectory` asks
+`SettingsStore` for its root on every call and the stores read their files on every query, so
+pointing the engine elsewhere takes effect on the next request rather than the next restart — the
+only behaviour under which a "Change…" button in a running editor is honest. Relocation *copies*
+what is there and never deletes: a half-failed move can lose a directory tree, and the cost of the
+alternative is one folder to clean up by hand. Nothing at the destination is overwritten either.
+
+**JSON, because everything else is.** Profiles, presets and workflows are JSON files written to be
+opened in an editor; a TOML or YAML settings file would be a second syntax and a second parser for
+one small file. Preferences are an opaque map of scalars the engine validates and never reads —
+adding one is a frontend change — and the two paths are the only keys the engine understands.
+
+**A workflow is a file named after itself.** The library is a folder: `<name>.unbi.json`, with the
+favourites in `favorites/`. The name *is* the id, which is why it is validated against every
+platform's filesystem rules before anything is written, and why starring is a move rather than a
+flag — a subfolder is something anyone can see, sort and back up without the editor. The document
+is stored verbatim after a format check; what a workflow means stays the editor's business. The
+editor's `WorkflowSession` remembers which entry is on the canvas and decides "unsaved" by
+reference: every command yields a new document and undo hands the old one back, so the canvas is
+clean exactly when its document is the object that was last saved.
+
+**A bundle is a zip with a readable manifest.** `.ucfg` is a zip so that the container is one
+everybody already has a tool for, and AES-256 (zip4j) when a password is given so that the same
+tools can open it. `manifest.json` is the one entry never encrypted: the import dialog reads it to
+say what the file holds and whether it will ask for a password before touching anything, and it
+carries counts, not contents. Which sections exist is a matter of which `SettingsSection` beans
+exist — profiles, credentials, presets, workflows, preferences — each owning its own file names,
+validation and idea of "already exists", with one conflict policy (skip, replace, keep both) applied
+by all of them. Every incoming entry name is treated as hostile until it has been shown to be one of
+the section's own; `presets/../.bashrc` is exactly what a zip can carry. A password is optional
+throughout: the credentials section is marked sensitive and the dialog warns in colour when keys
+would travel in plain text, and that is the user's call to make. Paths are never exported.
+
+**Runtime i18n, not `$localize`.** Angular's compile-time i18n produces one build per language and
+switches by loading a different bundle, which does not fit an editor served as one build by the
+engine, or a language setting that lives on the engine and takes effect when it is changed. The
+`Translator` is a signal-backed map lookup with `{placeholder}` filling and `Intl.PluralRules`; the
+`t` and `n` pipes are impure because a pure pipe would cache the answer for a key that never
+changes. Keys are typed: a typo in a template is a compile error, and a second language is one
+module typed `Record<MessageKey, string>`, so a missing key fails the build rather than showing
+English in a German dialog. Only the shell chrome and the new dialogs are keyed so far; node bodies,
+the inspector and the widgets are not, and node names and hints come from the engine untranslated.
+
+**What this found.** Every earlier dialog carried its `z-index` on a host styled `display: contents`
+— a box that does not exist — so their layering was DOM order all along. The settings dialog was the
+first to put a real `z-index` on a scrim, and promptly painted over the folder picker it had just
+opened. The values now sit on the boxes that paint. And the browser honours the `autofocus`
+attribute once per document: the first dialog inserted with it gets focus and every later one does
+not, hence the `appAutofocus` directive.

@@ -3,8 +3,15 @@ plugins {
     alias(libs.plugins.spring.boot)
 }
 
+version = "0.1.0"
+
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(libs.versions.java.get().toInt()) }
+}
+
+// META-INF/build-info.properties, so the engine can say which version it is on the settings page.
+springBoot {
+    buildInfo()
 }
 
 dependencies {
@@ -14,6 +21,8 @@ dependencies {
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.websocket)
     implementation(libs.spring.boot.starter.validation)
+    // Settings bundles: a .ucfg is a zip, AES-256 when password-protected, so 7-Zip can open it too.
+    implementation(libs.zip4j)
 
     testImplementation(libs.spring.boot.starter.test)
     testRuntimeOnly(libs.junit.platform.launcher)

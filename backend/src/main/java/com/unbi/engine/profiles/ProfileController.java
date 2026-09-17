@@ -27,7 +27,8 @@ import tools.jackson.databind.node.ObjectNode;
  *
  * <p>{@code GET /api/profiles/{schema}} answers with both the fields and the profiles in one body,
  * because the editor never wants one without the other — the dialog draws the fields and lists the
- * profiles, and the node's dropdown lists the profiles under the schema's label.
+ * profiles, and the node's dropdown lists the profiles under the schema's label. {@code GET
+ * /api/profiles} lists the schemas themselves, for the settings page, which knows none by name.
  */
 @RestController
 @RequestMapping("/api/profiles")
@@ -39,6 +40,21 @@ public class ProfileController {
 
     public ProfileController(ProfileStore store) {
         this.store = store;
+    }
+
+    /** Every schema the engine has, with how many profiles each holds: the settings page's overview. */
+    @GetMapping
+    public ObjectNode schemas() {
+        var root = NODES.objectNode();
+        var schemas = root.putArray("schemas");
+        for (var declared : store.schemas()) {
+            schemas.addObject()
+                    .put("id", declared.id())
+                    .put("label", declared.label())
+                    .put("testable", declared.testable())
+                    .put("count", store.list(declared.id()).size());
+        }
+        return root;
     }
 
     @GetMapping("/{schema}")

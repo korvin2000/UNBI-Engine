@@ -4,6 +4,16 @@ spring:
   threads:
     virtual:
       enabled: true
+  mvc:
+    # A refused request answers with an RFC 9457 problem whose `detail` is the engine's own
+    # sentence — the half of an error message the dialogs actually show.
+    problemdetails:
+      enabled: true
+  servlet:
+    multipart:
+      # A settings bundle (.ucfg) is uploaded whole; a library of workflows can run to a few MB.
+      max-file-size: 256MB
+      max-request-size: 256MB
 
 server:
   port: 8081
