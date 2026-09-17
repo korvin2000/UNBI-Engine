@@ -23,6 +23,8 @@ dependencies {
     implementation(libs.spring.boot.starter.validation)
     // Settings bundles: a .ucfg is a zip, AES-256 when password-protected, so 7-Zip can open it too.
     implementation(libs.zip4j)
+    implementation(libs.spring.security.oauth2.client)
+    implementation(libs.jackson.yaml)
 
     testImplementation(libs.spring.boot.starter.test)
     testRuntimeOnly(libs.junit.platform.launcher)

@@ -19,7 +19,12 @@
     <div class="dialog__body">
       <!-- The profiles that exist, and the way to start another. -->
       <aside class="side">
-        <button class="side__new" type="button" [class.is-active]="!selectedId()" (click)="startNew()">
+        <button
+          class="side__new"
+          type="button"
+          [class.is-active]="!selectedId()"
+          (click)="startNew()"
+        >
           <app-icon name="plus" [size]="12" />
           New profile
         </button>
@@ -75,6 +80,160 @@
           </label>
         </div>
 
+        @if (importSupported()) {
+          <details class="import-panel">
+            <summary>{{ 'profile.import.title' | t }}</summary>
+            <p>{{ 'profile.import.hint' | t }}</p>
+            <label class="field-row"
+              ><span>{{ 'profile.import.file' | t }}</span>
+              <input
+                type="file"
+                accept=".json,.yaml,.yml,application/json"
+                (change)="uploadImport($event)"
+              />
+            </label>
+            <label class="field-row"
+              ><span>{{ 'profile.import.document' | t }}</span>
+              <textarea
+                class="field"
+                rows="5"
+                [value]="importDocument()"
+                (input)="setImportText($event)"
+              ></textarea>
+            </label>
+            <label class="field-row"
+              ><span>{{ 'profile.import.documentUri' | t }}</span>
+              <input
+                class="field"
+                type="url"
+                [value]="documentUri()"
+                (input)="setImportText($event, true)"
+              />
+            </label>
+            <button
+              class="button"
+              type="button"
+              [disabled]="importing() || !importDocument().trim()"
+              (click)="previewImport()"
+            >
+              {{ (importing() ? 'profile.import.parsing' : 'profile.import.preview') | t }}
+            </button>
+            @if (importError()) {
+              <p class="form__error">{{ importError() }}</p>
+            }
+            @if (importResult(); as preview) {
+              @if (preview.operations.length) {
+                <label class="field-row"
+                  ><span>{{ 'profile.import.operation' | t }}</span>
+                  <select
+                    class="field"
+                    [value]="operation() ?? '__unset__'"
+                    (change)="chooseImport('operation', $event)"
+                  >
+                    <option value="__unset__">{{ 'profile.import.select' | t }}</option>
+                    @for (item of preview.operations; track item.id) {
+                      <option [value]="item.id" [disabled]="!item.available">
+                        {{ item.label }} {{ item.reason ?? '' }}
+                      </option>
+                    }
+                  </select>
+                </label>
+              } @else if (preview.servers.length) {
+                <p>{{ 'profile.import.manualProtocol' | t }}</p>
+                <label class="field-row"
+                  ><span>{{ 'profile.import.protocol' | t }}</span>
+                  <select
+                    class="field"
+                    [value]="protocol() ?? '__unset__'"
+                    (change)="chooseImport('protocol', $event)"
+                  >
+                    <option value="__unset__">{{ 'profile.import.select' | t }}</option>
+                    <option value="responses">Responses</option>
+                    <option value="chat_completions">Chat Completions</option>
+                  </select>
+                </label>
+              }
+              @if (preview.servers.length) {
+                <label class="field-row"
+                  ><span>{{ 'profile.import.server' | t }}</span>
+                  <select
+                    class="field"
+                    [value]="server() ?? '__unset__'"
+                    (change)="chooseImport('server', $event)"
+                  >
+                    <option value="__unset__">{{ 'profile.import.select' | t }}</option>
+                    @for (item of preview.servers; track item.id) {
+                      <option [value]="item.id">{{ item.url }}</option>
+                    }
+                  </select>
+                </label>
+              }
+              @for (entry of serverVariables(); track entry[0]) {
+                <label class="field-row"
+                  ><span>{{ entry[0] }}</span>
+                  <input
+                    class="field"
+                    [value]="variableValue(entry[0], entry[1].value ?? entry[1].default)"
+                    (input)="setVariable(entry[0], $event)"
+                  />
+                  @if (entry[1].enum) {
+                    <small>{{ entry[1].enum!.join(' · ') }}</small>
+                  }
+                </label>
+              }
+              @if (preview.securityAlternatives.length) {
+                <label class="field-row"
+                  ><span>{{ 'profile.import.security' | t }}</span>
+                  <select
+                    class="field"
+                    [value]="security() ?? '__unset__'"
+                    (change)="chooseImport('security', $event)"
+                  >
+                    <option value="__unset__">{{ 'profile.import.select' | t }}</option>
+                    @for (item of preview.securityAlternatives; track item.id) {
+                      <option [value]="item.id" [disabled]="!item.available">
+                        {{ item.label }} {{ item.reason ?? '' }}
+                      </option>
+                    }
+                  </select>
+                </label>
+              }
+              @for (issue of preview.issues; track $index) {
+                <p [class.form__error]="issue.severity === 'error'">
+                  {{ issue.pointer }}: {{ issue.message }}
+                </p>
+              }
+              @if (importChanges().length) {
+                <h3>{{ 'profile.import.changes' | t }}</h3>
+                @for (change of importChanges(); track change.key) {
+                  <p class="import-panel__change">
+                    <strong>{{ change.label }}</strong> {{ 'profile.import.from' | t }}
+                    <code>{{ change.before }}</code> {{ 'profile.import.to' | t }}
+                    <code>{{ change.after }}</code>
+                  </p>
+                }
+              }
+              @if (!preview.complete || !importCurrent()) {
+                <p>{{ 'profile.import.incomplete' | t }}</p>
+              }
+              <button
+                class="button"
+                type="button"
+                [disabled]="!preview.complete || !importCurrent() || importing()"
+                (click)="applyImport()"
+              >
+                {{ 'profile.import.apply' | t }}
+              </button>
+            }
+            @if (credentialDraft()) {
+              <p>{{ 'profile.import.credentialNeeded' | t }}</p>
+              <button class="button" type="button" (click)="configureCredential()">
+                {{ 'profile.import.configureCredential' | t }}
+              </button>
+            }
+          </details>
+        }
+
         <div class="form__fields">
           @for (field of plainFields(); track field.key) {
             @if (applies(field)) {
@@ -83,7 +242,12 @@
                   <span class="field-row__label">
                     {{ field.label }}
                     @if (field.hint) {
-                      <app-icon class="field-row__hint" name="help" [size]="12" [attr.title]="field.hint" />
+                      <app-icon
+                        class="field-row__hint"
+                        name="help"
+                        [size]="12"
+                        [attr.title]="field.hint"
+                      />
                     }
                   </span>
                 }
@@ -91,10 +255,17 @@
                   [spec]="field.widget!"
                   [value]="valueOf(field)"
                   [label]="field.label"
+                  [contextKey]="draft()"
                   (valueChange)="setValue(field.key, $event)"
-                >{{ field.label }}</app-node-widget>
+                  >{{ field.label }}</app-node-widget
+                >
                 @if (field.widget?.kind === 'toggle' && field.hint) {
-                  <app-icon class="field-row__hint" name="help" [size]="12" [attr.title]="field.hint" />
+                  <app-icon
+                    class="field-row__hint"
+                    name="help"
+                    [size]="12"
+                    [attr.title]="field.hint"
+                  />
                 }
               </div>
             }
@@ -111,7 +282,12 @@
                     <span class="field-row__label">
                       {{ field.label }}
                       @if (field.hint) {
-                        <app-icon class="field-row__hint" name="help" [size]="12" [attr.title]="field.hint" />
+                        <app-icon
+                          class="field-row__hint"
+                          name="help"
+                          [size]="12"
+                          [attr.title]="field.hint"
+                        />
                       }
                     </span>
                   }
@@ -119,8 +295,10 @@
                     [spec]="field.widget!"
                     [value]="valueOf(field)"
                     [label]="field.label"
+                    [contextKey]="draft()"
                     (valueChange)="setValue(field.key, $event)"
-                  >{{ field.label }}</app-node-widget>
+                    >{{ field.label }}</app-node-widget
+                  >
                 </div>
               }
             }

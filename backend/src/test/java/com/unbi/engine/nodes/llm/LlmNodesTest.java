@@ -3,8 +3,18 @@ package com.unbi.engine.nodes.llm;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.unbi.engine.core.graph.WorkflowGraph;
+import com.unbi.engine.core.run.EngineEvent;
+import com.unbi.engine.core.run.RunOutcome;
+import com.unbi.engine.core.type.TypeSystem;
+import com.unbi.engine.engine.ExecutionEngine;
+import com.unbi.engine.registry.NodeRegistry;
+import com.unbi.engine.core.node.NodeDefinition;
+import com.unbi.engine.core.node.NodeDescriptor;
+import com.unbi.engine.core.node.NodeContext;
 import com.unbi.engine.core.node.ValueContext;
 import com.unbi.engine.llm.Fixtures;
+import com.unbi.engine.llm.spec.ApiFormat;
 import com.unbi.engine.llm.spec.Attachment;
 import com.unbi.engine.llm.spec.Capability;
 import com.unbi.engine.llm.spec.EndpointSpec;
@@ -34,6 +44,32 @@ import org.junit.jupiter.api.io.TempDir;
  * node can be checked at the cheapest rung rather than through an end-to-end run.
  */
 class LlmNodesTest {
+
+    @Test
+    void modelRunsWithProductionInputResolution() {
+        var model = new LlmModelNode(null, null, null);
+        var endpoint = new NodeDefinition() {
+            @Override public NodeDescriptor descriptor() {
+                return NodeDescriptor.of("test.endpoint", "Endpoint").out("endpoint", "Endpoint", LlmTypes.ENDPOINT).build();
+            }
+            @Override public void execute(NodeContext context) {
+                context.output("endpoint", Fixtures.endpoint());
+            }
+        };
+        var engine = new ExecutionEngine(new NodeRegistry(List.of(endpoint, model)), new TypeSystem());
+        var graph = new WorkflowGraph(List.of(
+                new WorkflowGraph.GraphNode("endpoint", "test.endpoint", Map.of(), new WorkflowGraph.Position(0, 0)),
+                new WorkflowGraph.GraphNode("model", "llm.model", Map.of("model", "fixture-model"),
+                        new WorkflowGraph.Position(0, 0))),
+                List.of(new WorkflowGraph.GraphEdge("edge", "endpoint", "endpoint", "model", "endpoint")));
+        var events = new java.util.concurrent.CopyOnWriteArrayList<EngineEvent>();
+        engine.submit(graph, events::add);
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(5)).until(() ->
+                events.stream().anyMatch(EngineEvent.RunFinished.class::isInstance));
+        assertThat(events.stream().filter(EngineEvent.RunFinished.class::isInstance)
+                .map(EngineEvent.RunFinished.class::cast).findFirst().orElseThrow().outcome())
+                .isEqualTo(RunOutcome.COMPLETED);
+    }
 
     @Nested
     class Endpoint {
@@ -74,6 +110,32 @@ class LlmNodesTest {
         }
 
         @Test
+        void explicitProtocolAndAuthValuesAreStrict() {
+            var responses = EndpointProfiles.build(new ValueContext(profile(
+                    "gateway", "custom", "baseUrl", "https://router.test/v1",
+                    "apiFormat", "RESPONSES", "auth", "BASIC")));
+            assertThat(responses.defaultApiFormat()).isEqualTo(ApiFormat.RESPONSES);
+            assertThat(responses.authScheme()).isEqualTo(EndpointSpec.AuthScheme.BASIC);
+
+            assertThatThrownBy(() -> EndpointProfiles.build(new ValueContext(profile(
+                    "gateway", "custom", "baseUrl", "https://router.test/v1", "apiFormat", "future"))))
+                    .hasMessageContaining("Unknown API format");
+            assertThatThrownBy(() -> EndpointProfiles.build(new ValueContext(profile(
+                    "gateway", "custom", "baseUrl", "https://router.test/v1", "auth", "future"))))
+                    .hasMessageContaining("Unknown authentication scheme");
+        }
+
+        @Test
+        void endpointBaseUrlRejectsCredentialsAndUrlComponents() {
+            assertThatThrownBy(() -> EndpointProfiles.build(new ValueContext(profile(
+                    "gateway", "custom", "baseUrl", "https://user:pass@router.test/v1"))))
+                    .hasMessageContaining("userinfo");
+            assertThatThrownBy(() -> EndpointProfiles.build(new ValueContext(profile(
+                    "gateway", "custom", "baseUrl", "https://router.test/v1?key=value"))))
+                    .hasMessageContaining("query");
+        }
+
+        @Test
         @DisplayName("blank pacing takes the gateway kind's; an explicit zero means no limit")
         void pacingDistinguishesBlankFromZero() {
             var fromKind = EndpointProfiles.build(new ValueContext(profile(
@@ -86,9 +148,66 @@ class LlmNodesTest {
         }
 
         @Test
-        @DisplayName("no gateway kind carries a URL: a blank base URL is refused, never guessed")
-        void aBlankBaseUrlIsRefusedForEveryKind() {
+        void profileSaveRejectsAnInvalidEndpoint(@TempDir Path directory) {
+            assertThatThrownBy(() -> Fixtures.saveProfile(directory, "Bad", Map.of(
+                    "gateway", "custom", "baseUrl", "https://router.test/v1#fragment")))
+                    .hasMessageContaining("fragment");
+        }
+
+        @Test
+        @DisplayName("the built-in Codex profile supplies its ChatGPT resource while an explicit URL wins")
+        void codexDefaultResourceCanBeOverridden() {
+            var defaultEndpoint = EndpointProfiles.build(new ValueContext(profile("gateway", "codex")));
+            assertThat(defaultEndpoint.baseUrl()).isEqualTo("https://chatgpt.com/backend-api/codex");
+            var overridden = EndpointProfiles.build(new ValueContext(profile(
+                    "gateway", "codex", "baseUrl", "https://chatgpt.example/backend-api/codex")));
+            assertThat(overridden.baseUrl()).isEqualTo("https://chatgpt.example/backend-api/codex");
+        }
+
+        @Test
+        @DisplayName("the built-in Codex gateway rejects incompatible protocol and dialect choices locally")
+        void codexRejectsStandardDialectAndChatCompletionsLocally() {
+            assertThatThrownBy(() -> EndpointProfiles.build(new ValueContext(profile(
+                    "gateway", "codex", "responsesDialect", "standard"))))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> EndpointProfiles.build(new ValueContext(profile(
+                    "gateway", "codex", "apiFormat", "chat_completions"))))
+                    .isInstanceOf(IllegalArgumentException.class);
+
+            var endpoint = EndpointProfiles.build(new ValueContext(profile("gateway", "codex")));
+            assertThatThrownBy(() -> LlmModelNode.modelFrom(
+                    RecordingContext.with("model", "gpt-5-codex", "apiFormat", "chat_completions"),
+                    endpoint))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("Codex defaults and explicit Responses remain valid, while custom gateways retain both protocols")
+        void codexResponsesAndCustomProtocolsRemainSupported() {
+            var codex = EndpointProfiles.build(new ValueContext(profile("gateway", "codex")));
+            assertThat(codex.defaultApiFormat()).isEqualTo(ApiFormat.RESPONSES);
+            assertThat(codex.responsesDialect()).isEqualTo(EndpointSpec.ResponsesDialect.CODEX);
+            assertThat(codex.stream()).isTrue();
+
+            var explicitCodex = EndpointProfiles.build(new ValueContext(profile(
+                    "gateway", "codex", "apiFormat", "responses", "responsesDialect", "codex", "stream", "on")));
+            assertThat(explicitCodex.defaultApiFormat()).isEqualTo(ApiFormat.RESPONSES);
+
+            var customResponses = EndpointProfiles.build(new ValueContext(profile(
+                    "gateway", "custom", "baseUrl", "https://gateway.test/v1",
+                    "apiFormat", "responses", "responsesDialect", "standard")));
+            assertThat(customResponses.defaultApiFormat()).isEqualTo(ApiFormat.RESPONSES);
+            var customChat = EndpointProfiles.build(new ValueContext(profile(
+                    "gateway", "custom", "baseUrl", "https://gateway.test/v1",
+                    "apiFormat", "chat_completions", "responsesDialect", "standard")));
+            assertThat(customChat.defaultApiFormat()).isEqualTo(ApiFormat.CHAT_COMPLETIONS);
+        }
+
+        @Test
+        @DisplayName("no gateway kind carries an URL except built-in Codex's documented resource")
+        void aBlankBaseUrlIsRefusedForEveryKindExceptCodex() {
             for (var kind : ProviderProfile.builtIn()) {
+                if (kind.id().equals("codex")) continue;
                 assertThatThrownBy(() -> EndpointProfiles.build(new ValueContext(profile("gateway", kind.id()))))
                         .as(kind.id())
                         .hasMessageContaining("base URL");
@@ -158,14 +277,34 @@ class LlmNodesTest {
         }
 
         @Test
+        void modelProtocolPrecedenceIsExplicitThenEndpointThenGateway() {
+            var endpoint = EndpointProfiles.build(new ValueContext(Map.of(
+                    "gateway", "openai", "baseUrl", "https://router.test/v1",
+                    "apiFormat", "responses")));
+            var inherited = LlmModelNode.modelFrom(
+                    RecordingContext.with("model", "vendor/model-1", "apiFormat", "profile"), endpoint);
+            var explicit = LlmModelNode.modelFrom(
+                    RecordingContext.with("model", "vendor/model-1", "apiFormat", "chat_completions"), endpoint);
+
+            assertThat(inherited.apiFormat()).isEqualTo(ApiFormat.RESPONSES);
+            assertThat(explicit.apiFormat()).isEqualTo(ApiFormat.CHAT_COMPLETIONS);
+        }
+
+        @Test
         void buildsATargetFromTheWidgets() throws Exception {
-            var context = modelContext().and("capabilities", List.of("json_object", "vision"));
+            var context = modelContext().and("capabilities", List.of("json_object", "vision"))
+                    .and("reasoningDialect", "reasoning_effort")
+                    .and("reasoningEnabled", true)
+                    .and("reasoningEffort", "high");
             Fixtures.modelNode().execute(context);
 
             ModelSpec model = context.output("model");
             assertThat(model.name()).isEqualTo("vendor/model-1");
             assertThat(model.contextWindow()).isEqualTo(200_000);
             assertThat(model.capabilities()).containsExactlyInAnyOrder(Capability.JSON_OBJECT, Capability.VISION);
+            assertThat(model.reasoning().dialect()).isEqualTo(com.unbi.engine.llm.spec.Reasoning.Dialect.REASONING_EFFORT);
+            assertThat(model.reasoning().enabled()).isTrue();
+            assertThat(model.reasoning().effort()).isEqualTo(com.unbi.engine.llm.spec.Reasoning.Effort.HIGH);
             assertThat(model.pricing().inputPer1M()).isEqualTo(0.5);
             assertThat(model.key()).isEqualTo("test:vendor/model-1");
         }
@@ -536,6 +675,18 @@ class LlmNodesTest {
         }
 
         @Test
+        @DisplayName("a disconnect after visible output is never replayed")
+        void outputBeforeRetryableFailureDispatchesOnlyOnce() {
+            var provider = StubProvider.emitsThenFails("partial");
+            var context = requestContext(Fixtures.model()).and("retries", 3d);
+
+            assertThatThrownBy(() -> Fixtures.requestNode(provider.caller()).execute(context))
+                    .hasMessageContaining("disconnect after output");
+            assertThat(provider.calls()).hasSize(1);
+            assertThat(context.streamed("text")).isEqualTo("partial");
+        }
+
+        @Test
         @DisplayName("a rejected request is not retried: asking again buys the same rejection")
         void nonRetryableFailuresAreNotRepeated() {
             var provider = StubProvider.failing(LlmFailure.Kind.INVALID_REQUEST, "bad field");
@@ -628,7 +779,7 @@ class LlmNodesTest {
 
             assertThat(provider.calls()).hasSize(2);
             assertThat(provider.calls().stream().map(call -> call.messages().getFirst().text()))
-                    .containsExactly("Be terse.", "Be thorough.");
+                    .containsExactlyInAnyOrder("Be terse.", "Be thorough.");
         }
 
         @Test
@@ -641,7 +792,8 @@ class LlmNodesTest {
 
             List<String> texts = context.output("texts");
             assertThat(texts).hasSize(6).startsWith("Item 1: a", "Item 2: b", "Item 3: c");
-            assertThat(provider.calls().get(3).messages().getFirst().text()).isEqualTo("S2");
+            assertThat(provider.calls().stream().map(call -> call.messages().getFirst().text()))
+                    .containsExactlyInAnyOrder("S1", "S1", "S1", "S2", "S2", "S2");
         }
 
         @Test

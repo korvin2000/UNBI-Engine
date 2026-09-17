@@ -1,7 +1,5 @@
 package com.unbi.engine.llm.spec;
 
-import java.util.Locale;
-
 /**
  * Which wire dialect a target speaks.
  *
@@ -31,8 +29,15 @@ public enum ApiFormat {
     }
 
     public static ApiFormat of(String raw) {
-        return raw != null && raw.trim().toLowerCase(Locale.ROOT).startsWith("resp")
-                ? RESPONSES
-                : CHAT_COMPLETIONS;
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalArgumentException("API format must name a format");
+        }
+        var trimmed = raw.trim();
+        for (var value : values()) {
+            if (value.wireName.equalsIgnoreCase(trimmed)) {
+                return value;
+            }
+        }
+        throw new IllegalArgumentException("Unknown API format: " + trimmed);
     }
 }

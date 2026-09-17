@@ -1,6 +1,7 @@
 package com.unbi.engine.llm.provider;
 
 import com.unbi.engine.llm.auth.Credential;
+import com.unbi.engine.llm.auth.RequestAuthorization;
 import com.unbi.engine.llm.spec.ApiFormat;
 import com.unbi.engine.llm.spec.ChatCall;
 import com.unbi.engine.llm.spec.ChatResult;
@@ -33,20 +34,18 @@ public class ChatCompletionsProvider implements LlmProvider {
     @Override
     public ChatResult complete(ChatCall call, Credential credential, StreamSink sink) {
         var endpoint = call.model().endpoint();
-        var url = endpoint.urlFor(ApiFormat.CHAT_COMPLETIONS);
-        var headers = LlmProvider.headers(endpoint, credential);
+        var authorization = RequestAuthorization.forEndpoint(endpoint, credential, ApiFormat.CHAT_COMPLETIONS.path());
         var timeout = Duration.ofMillis(endpoint.timeoutMillis());
         var startedAt = System.nanoTime();
 
         if (!endpoint.stream()) {
-            var response = transport.post(url, headers, ChatWire.request(call, false), timeout);
+            var response = transport.post(authorization, ChatWire.request(call, false), timeout, sink::cancelled);
             return ChatWire.parse(response, endpoint.cachedTokenMode(), millisSince(startedAt));
         }
 
         var accumulator = new ChatWire.Accumulator();
         transport.postStreaming(
-                url,
-                headers,
+                authorization,
                 ChatWire.request(call, true),
                 timeout,
                 event -> {
@@ -55,6 +54,7 @@ public class ChatCompletionsProvider implements LlmProvider {
                         sink.chunk(chunk);
                         sink.progress(accumulator.textSoFar().length());
                     }
+                    return false;
                 },
                 sink::cancelled);
         return ChatWire.parse(accumulator.completion(), endpoint.cachedTokenMode(), millisSince(startedAt));

@@ -107,7 +107,8 @@ public class LlmModelNode implements NodeDefinition, NodeProbe {
                 .advancedSetting("reasoningEnabled", "Reasoning On", Types.BOOLEAN, new Widget.Toggle(), false)
                 .onlyWhen("reasoningDialect", "reasoning_effort", "reasoning", "thinking")
                 .advancedSetting("reasoningEffort", "Reasoning Effort", Types.TEXT, Widget.Dropdown.of(
-                        "minimal", "Minimal", "low", "Low", "medium", "Medium", "high", "High"), "medium")
+                        "minimal", "Minimal", "low", "Low", "medium", "Medium", "high", "High",
+                        "xhigh", "XHigh", "max", "Max"), "medium")
                 .onlyWhen("reasoningDialect", "reasoning_effort", "reasoning", "thinking")
                 .advancedSetting("webSearchMode", "Web Search Mode", Types.TEXT, Widget.Dropdown.of(
                         "none", "Off",
@@ -299,9 +300,10 @@ public class LlmModelNode implements NodeDefinition, NodeProbe {
 
         var profile = ProviderProfile.resolve(endpoint.profile());
         var apiFormatRaw = context.text("apiFormat");
-        var apiFormat = "profile".equals(apiFormatRaw) || apiFormatRaw.isBlank()
-                ? profile.defaultApiFormat()
+        var apiFormat = apiFormatRaw.isBlank() || "profile".equalsIgnoreCase(apiFormatRaw.trim())
+                ? (endpoint.defaultApiFormat() == null ? profile.defaultApiFormat() : endpoint.defaultApiFormat())
                 : ApiFormat.of(apiFormatRaw);
+        endpoint.validateApiFormat(apiFormat);
 
         var capabilities = new java.util.LinkedHashSet<Capability>();
         NodeValues.strings(context, "capabilities")

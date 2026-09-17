@@ -11,6 +11,8 @@ spring-boot-starter-validation = { module = "org.springframework.boot:spring-boo
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 zip4j = { module = "net.lingala.zip4j:zip4j", version.ref = "zip4j" }
+spring-security-oauth2-client = { module = "org.springframework.security:spring-security-oauth2-client" }
+jackson-yaml = { module = "tools.jackson.dataformat:jackson-dataformat-yaml" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }

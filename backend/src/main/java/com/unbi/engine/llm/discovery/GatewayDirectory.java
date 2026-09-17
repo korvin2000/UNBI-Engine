@@ -3,10 +3,12 @@ package com.unbi.engine.llm.discovery;
 import com.unbi.engine.llm.auth.Credential;
 import com.unbi.engine.llm.auth.CredentialStore;
 import com.unbi.engine.llm.provider.HttpTransport;
-import com.unbi.engine.llm.provider.LlmProvider;
+import com.unbi.engine.llm.auth.RequestAuthorization;
 import com.unbi.engine.llm.spec.EndpointSpec;
 import com.unbi.engine.llm.spec.LlmFailure;
 import com.unbi.engine.llm.spec.ProviderProfile;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import tools.jackson.databind.JsonNode;
@@ -30,9 +32,13 @@ public class GatewayDirectory {
     /** A test the user is waiting on. Longer than this and the answer is "it is not working". */
     private static final Duration PROBE_TIMEOUT = Duration.ofSeconds(20);
 
+    /** Compatibility value required by the Codex catalog protocol, independent of any local CLI. */
+    static final String CODEX_CATALOG_CLIENT_VERSION = "0.154.0";
+
     private final HttpTransport transport;
     private final CredentialStore credentials;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public GatewayDirectory(HttpTransport transport, CredentialStore credentials) {
         this.transport = transport;
         this.credentials = credentials;
@@ -49,7 +55,7 @@ public class GatewayDirectory {
         var profile = ProviderProfile.resolve(endpoint.profile());
         var url = endpoint.baseUrl() + profile.probePath();
         try {
-            var body = transport.get(url, headers(endpoint), PROBE_TIMEOUT);
+            var body = get(endpoint, profile.probePath(), PROBE_TIMEOUT);
             return new Reachability(true, describe(url, body), url, List.copyOf(evidence(body)));
         } catch (LlmFailure failure) {
             return new Reachability(false, failure.describe(), url, List.of());
@@ -61,8 +67,7 @@ public class GatewayDirectory {
     /** Every model this endpoint admits to serving, normalised. */
     public List<DiscoveredModel> models(EndpointSpec endpoint) {
         var profile = ProviderProfile.resolve(endpoint.profile());
-        var url = endpoint.baseUrl() + profile.modelsPath();
-        return ModelListingReader.read(transport.get(url, headers(endpoint), PROBE_TIMEOUT));
+        return ModelListingReader.read(get(endpoint, profile.modelsPath(), PROBE_TIMEOUT));
     }
 
     /**
@@ -78,24 +83,35 @@ public class GatewayDirectory {
      *     status 4xx and 5xx included — the caller decides which of those is fatal
      */
     public JsonNode get(EndpointSpec endpoint, String path, Duration timeout) {
-        return transport.get(endpoint.baseUrl() + path, headers(endpoint), timeout);
+        var requestPath = catalogPath(endpoint, path);
+        var session = credentials.session(endpoint, timeout, () -> false);
+        Credential credential = session.resolve();
+        try {
+            return response(endpoint, path, requestPath, credential, timeout);
+        } catch (LlmFailure failure) {
+            if (failure.status() != 401 || !session.recover(failure, credential)) {
+                throw failure;
+            }
+            return response(endpoint, path, requestPath, session.resolve(), timeout);
+        }
     }
 
-    /**
-     * The headers a real call would carry.
-     *
-     * <p>A missing credential is not fatal here. "No credential named 'openrouter'" is a far more
-     * useful thing for a test to report than a connection it refused to attempt, and an endpoint
-     * that needs no key must still be testable.
-     */
-    private java.util.Map<String, String> headers(EndpointSpec endpoint) {
-        if (endpoint.authScheme() == EndpointSpec.AuthScheme.NONE || endpoint.credentialRef().isBlank()) {
-            return LlmProvider.headers(endpoint, null);
+    private JsonNode response(
+            EndpointSpec endpoint, String catalogPath, String requestPath,
+            Credential credential, Duration timeout) {
+        var body = transport.get(
+                RequestAuthorization.forEndpoint(endpoint, credential, requestPath),
+                timeout, () -> false);
+        return requestPath.equals(catalogPath) ? body : ModelListingReader.normalizeCodex(body);
+    }
+
+    private String catalogPath(EndpointSpec endpoint, String path) {
+        if (endpoint.responsesDialect() != EndpointSpec.ResponsesDialect.CODEX
+                || !ProviderProfile.resolve(endpoint.profile()).modelsPath().equals(path)) {
+            return path;
         }
-        // Resolved through the store exactly as a run resolves it, and failing the same way: a
-        // gateway's 401 says nothing about *which* name the engine could not find, and that name
-        // is the whole of what the user needs to fix.
-        return LlmProvider.headers(endpoint, credentials.require(endpoint.credentialRef()));
+        var encoded = URLEncoder.encode(CODEX_CATALOG_CLIENT_VERSION, StandardCharsets.UTF_8).replace("+", "%20");
+        return path + "?client_version=" + encoded;
     }
 
     /** What a healthy answer is worth saying. A model count is the most informative thing there is. */

@@ -5,8 +5,6 @@ import com.unbi.engine.llm.spec.ApiFormat;
 import com.unbi.engine.llm.spec.ChatCall;
 import com.unbi.engine.llm.spec.ChatResult;
 import com.unbi.engine.llm.spec.EndpointSpec;
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 /**
  * Something that can answer a {@link ChatCall}.
@@ -31,20 +29,4 @@ public interface LlmProvider {
      */
     ChatResult complete(ChatCall call, Credential credential, StreamSink sink);
 
-    /**
-     * The headers one request needs: the endpoint's own, then whatever the credential requires.
-     *
-     * <p>The credential goes on last deliberately. An endpoint header must never be able to
-     * overwrite an {@code Authorization} that a credential source produced — that is the difference
-     * between a misconfiguration and a silently unauthenticated request.
-     */
-    static Map<String, String> headers(EndpointSpec endpoint, Credential credential) {
-        var headers = new LinkedHashMap<>(endpoint.headers());
-        if (credential == null || credential.isEmpty()) {
-            return headers;
-        }
-        headers.put("Authorization", "Bearer " + credential.token());
-        headers.putAll(credential.headers());
-        return headers;
-    }
 }

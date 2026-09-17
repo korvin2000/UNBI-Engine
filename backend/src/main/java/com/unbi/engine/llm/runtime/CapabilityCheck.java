@@ -47,6 +47,7 @@ public final class CapabilityCheck {
         checkAttachments(call, findings);
         checkWebSearch(call, findings);
         checkSampling(call, findings);
+        checkCodex(call, findings);
         checkBudget(call, findings);
         return List.copyOf(findings);
     }
@@ -135,6 +136,45 @@ public final class CapabilityCheck {
             findings.add(Finding.warning(
                     "Reasoning",
                     "%s does not declare reasoning, but the call asks it to think.".formatted(model.name())));
+        }
+    }
+
+    private static void checkCodex(ChatCall call, List<Finding> findings) {
+        var model = call.model();
+        if (model.endpoint().responsesDialect() != com.unbi.engine.llm.spec.EndpointSpec.ResponsesDialect.CODEX) {
+            return;
+        }
+        if (model.apiFormat() != ApiFormat.RESPONSES) {
+            findings.add(Finding.error(
+                    "API format", "The Codex Responses dialect only supports the Responses API."));
+        }
+        if (!model.endpoint().stream()) {
+            findings.add(Finding.error(
+                    "Streaming", "The Codex Responses dialect requires streaming."));
+        }
+        var sampling = call.sampling();
+        if (sampling.temperature() != null) {
+            findings.add(Finding.error(
+                    "temperature", "The Codex Responses dialect does not support temperature."));
+        }
+        if (sampling.topP() != null) {
+            findings.add(Finding.error(
+                    "top_p", "The Codex Responses dialect does not support top_p."));
+        }
+        if (sampling.maxOutputTokens() != null || model.maxOutputTokens() > 0) {
+            findings.add(Finding.error(
+                    "max_output_tokens", "The Codex Responses dialect does not support max_output_tokens."));
+        }
+        if (model.reasoning().dialect() == com.unbi.engine.llm.spec.Reasoning.Dialect.REASONING) {
+            findings.add(Finding.error(
+                    "reasoning", "The Codex Responses dialect supports reasoning effort only."));
+        }
+        for (var key : List.of("temperature", "top_p", "max_output_tokens")) {
+            var value = model.extraBody().get(key);
+            if (value != null && !(value instanceof tools.jackson.databind.JsonNode node && node.isNull())) {
+                findings.add(Finding.error(
+                        key, "The Codex Responses dialect does not support " + key + "."));
+            }
         }
     }
 

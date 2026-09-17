@@ -85,7 +85,8 @@ class SettingsBundleTest {
                     new WorkflowsSection(workflows),
                     new PreferencesSection(settings),
                     new ProfilesSection(data),
-                    new CredentialsSection(credentials),
+                    new CredentialsSection(credentials, new com.unbi.engine.llm.auth.ManagedCredentialStore(data),
+                            new com.unbi.engine.llm.auth.CredentialStore(List.of(credentials))),
                     new PresetsSection(data)), "test");
             return new Engine(home, settings, presets, profiles, credentials, workflows, bundle);
         }

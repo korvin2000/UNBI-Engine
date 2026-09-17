@@ -11,6 +11,8 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Reads a {@code GET /v1/models} body into {@link DiscoveredModel}s.
@@ -33,6 +35,8 @@ import tools.jackson.databind.JsonNode;
  * capability check exists to refuse.
  */
 public final class ModelListingReader {
+    private static final JsonNodeFactory NODES = JsonNodeFactory.instance;
+
 
     private ModelListingReader() {}
 
@@ -51,6 +55,43 @@ public final class ModelListingReader {
         }
         models.sort((a, b) -> a.id().compareToIgnoreCase(b.id()));
         return List.copyOf(models);
+    }
+
+    /**
+     * Translates the Codex model catalogue into this reader's established listing shape.
+     *
+     * <p>The Codex catalogue is deliberately mapped here, once, rather than teaching every
+     * discovery consumer its separate envelope. Only published facts survive the translation:
+     * notably, it has no price fields, so the resulting entries have none either.
+     */
+    public static JsonNode normalizeCodex(JsonNode body) {
+        if (body == null || !body.path("models").isArray()) {
+            return body;
+        }
+        var normalized = NODES.objectNode();
+        var data = normalized.putArray("data");
+        for (var source : body.path("models")) {
+            var id = firstText(source, "slug");
+            if (id.isBlank()) {
+                continue;
+            }
+            var target = data.addObject().put("id", id).put("api_format", "responses");
+            var label = firstText(source, "display_name");
+            if (!label.isBlank()) {
+                target.put("name", label);
+            }
+            copyArray(source, target, "input_modalities");
+            var context = positive(source.path("context_window"));
+            if (context != null) {
+                target.put("context_length", context);
+            }
+            reasoning(source, target);
+            if (source.path("supports_search_tool").isBoolean()
+                    && source.path("supports_search_tool").asBoolean()) {
+                capabilities(target).put("web_search", true);
+            }
+        }
+        return normalized;
     }
 
     /**
@@ -137,6 +178,9 @@ public final class ModelListingReader {
         var capabilities = new LinkedHashSet<Capability>();
         if (parameters.contains("response_format")) {
             capabilities.add(Capability.JSON_OBJECT);
+        }
+        if (capabilityFlags.path("web_search").asBoolean(false)) {
+            capabilities.add(Capability.WEB_SEARCH);
         }
         if (parameters.contains("structured_outputs")) {
             capabilities.add(Capability.JSON_SCHEMA);
@@ -293,6 +337,57 @@ public final class ModelListingReader {
         }
         return null;
     }
+
+    private static void copyArray(JsonNode source, ObjectNode target, String field) {
+        var values = source.path(field);
+        if (!values.isArray()) {
+            return;
+        }
+        var copy = target.putArray(field);
+        values.forEach(value -> {
+            var text = value.asString("").trim();
+            if (!text.isEmpty()) {
+                copy.add(text);
+            }
+        });
+        if (copy.isEmpty()) {
+            target.remove(field);
+        }
+    }
+
+    private static void reasoning(JsonNode source, ObjectNode target) {
+        var levels = source.path("supported_reasoning_levels");
+        var efforts = new ArrayList<String>();
+        if (levels.isArray()) {
+            for (var level : levels) {
+                var effort = level.isObject() ? level.path("effort").asString("") : level.asString("");
+                effort = effort.trim().toLowerCase(Locale.ROOT);
+                if (!effort.isEmpty() && !efforts.contains(effort)) {
+                    efforts.add(effort);
+                }
+            }
+        }
+        var defaultLevel = source.path("default_reasoning_level");
+        var defaultEffort = defaultLevel.isObject()
+                ? defaultLevel.path("effort").asString("")
+                : defaultLevel.asString("");
+        defaultEffort = defaultEffort.trim().toLowerCase(Locale.ROOT);
+        if (!efforts.isEmpty()) {
+            target.putArray("supported_parameters").add("reasoning_effort");
+            var reasoning = target.putObject("reasoning");
+            var listed = reasoning.putArray("supported_efforts");
+            efforts.forEach(listed::add);
+            if (!defaultEffort.isEmpty()) {
+                reasoning.put("default_effort", defaultEffort);
+            }
+            capabilities(target).put("reasoning", true);
+        }
+    }
+    private static ObjectNode capabilities(ObjectNode target) {
+        var existing = target.path("capabilities");
+        return existing.isObject() ? (ObjectNode) existing : target.putObject("capabilities");
+    }
+
 
     /** Gateways quote per-token prices, often as decimal strings. This engine quotes per million. */
     private static Double perMillion(JsonNode node) {

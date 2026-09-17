@@ -90,6 +90,8 @@ public class SettingsController {
             relocation.put("copied", done.filesCopied());
             relocation.put("skipped", done.filesSkipped());
             return response;
+        } catch (SettingsStore.DataBusyException busy) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, busy.getMessage(), busy);
         } catch (IllegalArgumentException invalid) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, invalid.getMessage(), invalid);
         }

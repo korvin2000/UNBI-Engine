@@ -59,15 +59,15 @@
               <span class="select__note">{{ option.note }}</span>
             }
           </button>
-          @if (option.removable) {
+          @if (widget.kind === 'credential') {
             <button
               class="select__remove"
               type="button"
-              [attr.title]="'Forget the key named ' + option.value"
-              [attr.aria-label]="'Forget ' + option.value"
-              (click)="removeCredential(option.value, $event)"
+              [attr.title]="'credential.manage' | t"
+              [attr.aria-label]="('credential.manage' | t) + ': ' + option.value"
+              (click)="manageCredential(option.value, $event)"
             >
-              <app-icon name="trash" [size]="11" />
+              <app-icon name="edit" [size]="11" />
             </button>
           }
         </li>
@@ -87,44 +87,10 @@
       <p class="select__more">{{ hiddenChoices() }} more — keep typing to narrow it down</p>
     }
     @if (widget.kind === 'credential') {
-      @if (addingKey()) {
-        <!-- The key travels to the engine once and is never shown again — not even here, which is
-             why this is a password box and why nothing is kept after Save. -->
-        <form class="keyform" (submit)="saveCredential($event)">
-          <input
-            class="field keyform__name"
-            type="text"
-            autofocus
-            spellcheck="false"
-            placeholder="name, e.g. openrouter"
-            [value]="keyName()"
-            (input)="keyName.set($any($event.target).value)"
-            aria-label="Credential name"
-          />
-          <input
-            class="field keyform__secret"
-            type="password"
-            placeholder="the API key"
-            autocomplete="off"
-            [value]="keySecret()"
-            (input)="keySecret.set($any($event.target).value)"
-            aria-label="API key"
-          />
-          <div class="keyform__actions">
-            <button class="keyform__save" type="submit" [disabled]="!canSaveKey()">Save key</button>
-            <button class="keyform__cancel" type="button" (click)="cancelKey()">Cancel</button>
-          </div>
-          @if (credentialError()) {
-            <p class="keyform__error">{{ credentialError() }}</p>
-          }
-          <p class="keyform__note">Kept on the engine in credentials.properties. It can be named from now on, never read back.</p>
-        </form>
-      } @else {
-        <button class="select__add" type="button" (click)="startKey()">
-          <app-icon name="plus" [size]="11" />
-          Add a key…
-        </button>
-      }
+      <button class="select__add" type="button" (click)="manageCredential('')">
+        <app-icon name="plus" [size]="11" />
+        {{ 'credential.add' | t }}
+      </button>
     }
   </div>
 </ng-template>
@@ -256,7 +222,12 @@
 
   @case ('toggle') {
     <label class="check" [class.is-disabled]="disabled()" fDragBlocker>
-      <input type="checkbox" [checked]="checked()" [disabled]="disabled()" (change)="onToggle($event)" />
+      <input
+        type="checkbox"
+        [checked]="checked()"
+        [disabled]="disabled()"
+        (change)="onToggle($event)"
+      />
       <span class="check__box">
         @if (checked()) {
           <app-icon name="check" [size]="11" [weight]="3" />
@@ -304,7 +275,12 @@
             [disabled]="disabled()"
             (click)="toggleList()"
           >
-            <app-icon class="select__chevron" [class.is-open]="listOpen()" name="chevron" [size]="13" />
+            <app-icon
+              class="select__chevron"
+              [class.is-open]="listOpen()"
+              name="chevron"
+              [size]="13"
+            />
           </button>
         </div>
       } @else {
@@ -319,7 +295,12 @@
           (keydown)="onSelectKeydown($event)"
         >
           <span class="select__value">{{ selectedLabel() }}</span>
-          <app-icon class="select__chevron" [class.is-open]="listOpen()" name="chevron" [size]="13" />
+          <app-icon
+            class="select__chevron"
+            [class.is-open]="listOpen()"
+            name="chevron"
+            [size]="13"
+          />
         </button>
       }
 
@@ -346,7 +327,9 @@
         (click)="toggleList()"
         (keydown)="onSelectKeydown($event)"
       >
-        <span class="select__value" [class.is-placeholder]="!text()">{{ selectedLabel() || 'Choose a profile…' }}</span>
+        <span class="select__value" [class.is-placeholder]="!text()">{{
+          selectedLabel() || 'Choose a profile…'
+        }}</span>
         <app-icon class="select__chevron" [class.is-open]="listOpen()" name="chevron" [size]="13" />
       </button>
       <button
@@ -380,7 +363,9 @@
         (keydown)="onSelectKeydown($event)"
       >
         <app-icon class="select__lead" name="key" [size]="12" />
-        <span class="select__value" [class.is-placeholder]="!text()">{{ selectedLabel() || 'From the gateway kind' }}</span>
+        <span class="select__value" [class.is-placeholder]="!text()">{{
+          selectedLabel() || 'From the gateway kind'
+        }}</span>
         <app-icon class="select__chevron" [class.is-open]="listOpen()" name="chevron" [size]="13" />
       </button>
 
@@ -581,7 +566,10 @@
          publishes nothing. -->
     <ng-template #factBlank>
       @if (state === 'unfetched') {
-        <span class="fact__pending" title="Nothing fetched yet — press the bulb in the node's header">
+        <span
+          class="fact__pending"
+          title="Nothing fetched yet — press the bulb in the node's header"
+        >
           not fetched
         </span>
       } @else {
@@ -616,7 +604,9 @@
               <!-- The same full-window editor a prompt is written in, read-only. One place in this
                    editor where a long text is looked at, rather than a second viewer to keep
                    consistent with it. -->
-              <button class="fact__more" type="button" (click)="showAll()" fDragBlocker>Show all</button>
+              <button class="fact__more" type="button" (click)="showAll()" fDragBlocker>
+                Show all
+              </button>
             }
           } @else {
             <ng-container *ngTemplateOutlet="factBlank" />
@@ -683,7 +673,10 @@
       unreachable setting that renders as nothing is indistinguishable from a setting that is not
       there, which is how a run ends up behaving in a way nothing on screen explains.
     -->
-    <p class="unsupported" [attr.title]="'This build of the editor has no control for ' + declaredKind()">
+    <p
+      class="unsupported"
+      [attr.title]="'This build of the editor has no control for ' + declaredKind()"
+    >
       <app-icon name="warning" [size]="11" />
       unsupported control: {{ declaredKind() }}
     </p>

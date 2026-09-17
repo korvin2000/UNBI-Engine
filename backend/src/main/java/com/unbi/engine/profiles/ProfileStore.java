@@ -105,9 +105,11 @@ public class ProfileStore {
             var target = profile.isNew()
                     ? uniqueTarget(directory, profile.withId(Profile.slug(profile.name())))
                     : new Target(profile, fileFor(directory, profile.id()));
+            var resolvedValues = schema.withDefaults(profile.values());
+            schema.validate(resolvedValues);
             var stamped = new Profile(
                     target.profile().id(), schema.id(), profile.name(), profile.description(),
-                    schema.withDefaults(profile.values()), Instant.now());
+                    resolvedValues, Instant.now());
             Files.writeString(target.path(), toJson(stamped), StandardCharsets.UTF_8);
             return stamped;
         }

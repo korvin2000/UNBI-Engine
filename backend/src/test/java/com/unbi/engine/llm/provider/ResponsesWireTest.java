@@ -1,7 +1,7 @@
 package com.unbi.engine.llm.provider;
 
 import static org.assertj.core.api.Assertions.assertThat;
-
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.unbi.engine.llm.Fixtures;
 import com.unbi.engine.llm.spec.ApiFormat;
 import com.unbi.engine.llm.spec.Attachment;
@@ -10,6 +10,7 @@ import com.unbi.engine.llm.spec.ChatCall;
 import com.unbi.engine.llm.spec.ChatMessage;
 import com.unbi.engine.llm.spec.EndpointSpec;
 import com.unbi.engine.llm.spec.FinishReason;
+import com.unbi.engine.llm.spec.LlmFailure;
 import com.unbi.engine.llm.spec.ModelSpec;
 import com.unbi.engine.llm.spec.RatePolicy;
 import com.unbi.engine.llm.spec.Reasoning;
@@ -109,7 +110,8 @@ class ResponsesWireTest {
             var caching = new EndpointSpec(
                     base.id(), base.profile(), base.baseUrl(), base.authScheme(), base.credentialRef(),
                     Map.of(), RatePolicy.UNLIMITED, 30_000, false,
-                    TokenUsage.CachedTokenMode.INCLUDED, true);
+                    TokenUsage.CachedTokenMode.INCLUDED, true, base.defaultApiFormat(),
+                    base.responsesDialect(), base.apiKeyLocation(), base.apiKeyName());
 
             var withoutSupport = new ChatCall(
                     responsesModel(), List.of(ChatMessage.user("hi")), ResponseFormat.TEXT,
@@ -122,6 +124,57 @@ class ResponsesWireTest {
             assertThat(ResponsesWire.request(withoutSupport, false).has("prompt_cache_key")).isFalse();
             assertThat(ResponsesWire.request(withSupport, false).path("prompt_cache_key").asString(""))
                     .isEqualTo("prefix-1");
+        }
+
+        @Test
+        void codexMovesSystemTextIntoInstructionsAndKeepsConversationTurns() {
+            var base = Fixtures.endpoint();
+            var endpoint = new EndpointSpec(
+                    base.id(), base.profile(), base.baseUrl(), base.authScheme(), base.credentialRef(),
+                    base.headers(), base.rate(), base.timeoutMillis(), true, base.cachedTokenMode(),
+                    base.responsesPromptCache(), ApiFormat.RESPONSES,
+                    EndpointSpec.ResponsesDialect.CODEX, base.apiKeyLocation(), base.apiKeyName());
+            var model = Fixtures.model(endpoint);
+            var body = ResponsesWire.request(new ChatCall(
+                    model,
+                    List.of(ChatMessage.system("first"), ChatMessage.system("second"),
+                            ChatMessage.user("question"), ChatMessage.assistant("prior")),
+                    ResponseFormat.TEXT,
+                    new SamplingParams(0.2, 0.8, null, null, null, null, null, List.of(), 100),
+                    ChatCall.WebSearch.OFF, "", ""), true);
+
+            assertThat(body.path("instructions").asString("")).isEqualTo("first\n\nsecond");
+            assertThat(body.path("input").size()).isEqualTo(2);
+            assertThat(body.path("input").path(0).path("role").asString("")).isEqualTo("user");
+            assertThat(body.path("input").path(1).path("role").asString("")).isEqualTo("assistant");
+            assertThat(body.has("temperature")).isFalse();
+            assertThat(body.has("top_p")).isFalse();
+            assertThat(body.has("max_output_tokens")).isFalse();
+            assertThat(body.path("store").asBoolean(true)).isFalse();
+        }
+
+        @Test
+        void codexRejectsSystemAttachmentsAndContradictoryTransportExtras() {
+            var base = Fixtures.endpoint();
+            var endpoint = new EndpointSpec(
+                    base.id(), base.profile(), base.baseUrl(), base.authScheme(), base.credentialRef(),
+                    base.headers(), base.rate(), base.timeoutMillis(), true, base.cachedTokenMode(),
+                    base.responsesPromptCache(), ApiFormat.RESPONSES,
+                    EndpointSpec.ResponsesDialect.CODEX, base.apiKeyLocation(), base.apiKeyName());
+            var model = Fixtures.model(endpoint);
+            assertThatThrownBy(() -> ResponsesWire.request(new ChatCall(
+                    model, List.of(new ChatMessage(ChatMessage.Role.SYSTEM, "rules", List.of(
+                            Attachment.image("system.png", "image/png", new byte[] {1})), false)),
+                    ResponseFormat.TEXT, SamplingParams.UNSET, ChatCall.WebSearch.OFF, "", ""), true))
+                    .isInstanceOf(LlmFailure.class);
+            var contradictory = new ModelSpec(
+                    model.endpoint(), model.name(), model.apiFormat(), model.capabilities(), model.reasoning(),
+                    model.webSearchMode(), model.pricing(), model.contextWindow(), model.maxOutputTokens(),
+                    model.maxTokensParam(), model.sampling(), model.routing(), model.tags(),
+                    Map.of("stream", false));
+            assertThatThrownBy(() -> ResponsesWire.request(
+                    ChatCall.of(contradictory, List.of(ChatMessage.user("hi"))), true))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 
@@ -298,15 +351,16 @@ class ResponsesWireTest {
         }
 
         @Test
-        @DisplayName("a stream that just stops says incomplete rather than claiming a clean finish")
-        void aStreamWithNoTerminalEventIsHonest() {
+        @DisplayName("a stream without a terminal response is a format failure, not synthetic success")
+        void aStreamWithNoTerminalEventFails() {
             var accumulator = new ResponsesWire.Accumulator();
             accumulator.accept(MAPPER.readTree(
                     "{\"type\":\"response.output_text.delta\",\"delta\":\"cut\"}"));
 
-            var result = ResponsesWire.parse(accumulator.response(), 0);
-            assertThat(result.text()).isEqualTo("cut");
-            assertThat(result.finishReason()).isNotEqualTo(FinishReason.STOP);
+            assertThatThrownBy(accumulator::response)
+                    .isInstanceOfSatisfying(com.unbi.engine.llm.spec.LlmFailure.class,
+                            failure -> assertThat(failure.kind())
+                                    .isEqualTo(com.unbi.engine.llm.spec.LlmFailure.Kind.RESPONSE_FORMAT));
         }
     }
 }

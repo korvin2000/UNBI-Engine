@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { APP_VERSION } from '../../core/app-version';
 import { WidgetSpec } from '../../core/catalog/catalog.models';
-import { CredentialService } from '../../core/credentials/credential.service';
+import { CredentialName, CredentialService } from '../../core/credentials/credential.service';
 import { CountPipe } from '../../core/i18n/count.pipe';
 import { MessageKey, PluralKey } from '../../core/i18n/messages/en';
 import { TranslatePipe } from '../../core/i18n/translate.pipe';
@@ -103,7 +103,10 @@ export class SettingsDialog {
   protected readonly language = this.settings.language;
   protected readonly languageSpec = computed<WidgetSpec>(() => ({
     kind: 'dropdown',
-    options: this.translator.languages.map((language) => ({ value: language.code, label: language.label })),
+    options: this.translator.languages.map((language) => ({
+      value: language.code,
+      label: language.label,
+    })),
     optionsKey: '',
     allowCustom: false,
     narrowing: null,
@@ -136,9 +139,30 @@ export class SettingsDialog {
         effective: current.paths.data.effective,
         configured: current.paths.data.configured,
         tree: [
-          { icon: 'key', name: 'credentials.properties', count: count('credentials'), countKey: 'settings.storage.keys' },
-          { icon: 'folder', name: 'profiles/', count: count('profiles'), countKey: 'settings.storage.profiles' },
-          { icon: 'folder', name: 'presets/', count: count('presets'), countKey: 'settings.storage.presets' },
+          {
+            icon: 'key',
+            name: 'credentials.properties',
+            count: this.keys().filter((key) => key.source === 'file').length,
+            countKey: 'settings.storage.keys',
+          },
+          {
+            icon: 'folder',
+            name: 'credentials/',
+            count: this.keys().filter((key) => key.removable && key.source !== 'file').length,
+            countKey: 'settings.storage.connections',
+          },
+          {
+            icon: 'folder',
+            name: 'profiles/',
+            count: count('profiles'),
+            countKey: 'settings.storage.profiles',
+          },
+          {
+            icon: 'folder',
+            name: 'presets/',
+            count: count('presets'),
+            countKey: 'settings.storage.presets',
+          },
         ],
       },
       {
@@ -148,8 +172,18 @@ export class SettingsDialog {
         effective: current.paths.workflows.effective,
         configured: current.paths.workflows.configured,
         tree: [
-          { icon: 'star', name: 'favorites/', count: 0, countKey: 'settings.storage.workflowsCount' },
-          { icon: 'documents', name: '*.unbi.json', count: count('workflows'), countKey: 'settings.storage.workflowsCount' },
+          {
+            icon: 'star',
+            name: 'favorites/',
+            count: 0,
+            countKey: 'settings.storage.workflowsCount',
+          },
+          {
+            icon: 'documents',
+            name: '*.unbi.json',
+            count: count('workflows'),
+            countKey: 'settings.storage.workflowsCount',
+          },
         ],
       },
     ];
@@ -166,14 +200,9 @@ export class SettingsDialog {
   protected readonly schemas = this.profiles.schemas;
   protected readonly keys = this.credentials.names;
   protected readonly keyError = this.credentials.error;
-  protected readonly newKeyName = signal('');
-  protected readonly newKeyValue = signal('');
-  protected readonly addingKey = signal(false);
   protected readonly keyNotice = signal<Notice | null>(null);
   protected readonly removingKey = signal<string | null>(null);
-  protected readonly canAddKey = computed(
-    () => /^[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(this.newKeyName().trim()) && this.newKeyValue().trim().length > 0 && !this.addingKey(),
-  );
+  private credentialRevision = 0;
 
   // --- Backup: export ---------------------------------------------------------
 
@@ -196,7 +225,9 @@ export class SettingsDialog {
 
   /** Secrets are ticked and nothing protects them: the one warning worth a colour. */
   protected readonly plainKeys = computed(() => {
-    const sensitive = this.sections().filter((section) => section.sensitive && this.chosen().has(section.id));
+    const sensitive = this.sections().filter(
+      (section) => section.sensitive && this.chosen().has(section.id),
+    );
     return sensitive.length > 0 && !(this.protect() && this.password().length > 0);
   });
 
@@ -242,8 +273,14 @@ export class SettingsDialog {
     const when = new Date(found.createdAt);
     const formatted = Number.isNaN(when.getTime())
       ? found.createdAt
-      : new Intl.DateTimeFormat(this.translator.language(), { dateStyle: 'medium', timeStyle: 'short' }).format(when);
-    return this.translator.t('settings.backup.fileFrom', { when: formatted, engine: found.engine || '?' });
+      : new Intl.DateTimeFormat(this.translator.language(), {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        }).format(when);
+    return this.translator.t('settings.backup.fileFrom', {
+      when: formatted,
+      engine: found.engine || '?',
+    });
   });
 
   constructor() {
@@ -272,7 +309,12 @@ export class SettingsDialog {
 
   protected onKeydown(event: KeyboardEvent): void {
     // The pickers that open from here own Escape while they are up.
-    if (!this.page() || this.browser.open() !== null || this.profiles.editing() !== null) {
+    if (
+      !this.page() ||
+      this.browser.open() !== null ||
+      this.profiles.editing() !== null ||
+      this.credentials.editing() !== null
+    ) {
       return;
     }
     if (event.key === 'Escape') {
@@ -289,7 +331,8 @@ export class SettingsDialog {
       return;
     }
     this.settings.savePreferences({ language: code }).subscribe({
-      next: () => this.generalNotice.set({ text: this.translator.t('settings.general.saved'), kind: 'ok' }),
+      next: () =>
+        this.generalNotice.set({ text: this.translator.t('settings.general.saved'), kind: 'ok' }),
       error: (error: unknown) => this.generalNotice.set({ text: messageOf(error), kind: 'error' }),
     });
   }
@@ -299,7 +342,9 @@ export class SettingsDialog {
   protected async pickDirectory(location: Location): Promise<void> {
     const chosen = await this.browser.pick({
       mode: 'directory',
-      title: this.translator.t('settings.storage.pick', { what: this.translator.t(location.titleKey) }),
+      title: this.translator.t('settings.storage.pick', {
+        what: this.translator.t(location.titleKey),
+      }),
       startAt: location.effective,
       extensions: [],
     });
@@ -373,31 +418,12 @@ export class SettingsDialog {
     });
   }
 
-  protected setNewKeyName(event: Event): void {
-    this.newKeyName.set((event.target as HTMLInputElement).value);
+  protected manageCredential(current = ''): void {
+    void this.credentials.edit({ current }).then(() => this.refreshCounts());
   }
 
-  protected setNewKeyValue(event: Event): void {
-    this.newKeyValue.set((event.target as HTMLInputElement).value);
-  }
-
-  protected addKey(): void {
-    if (!this.canAddKey()) {
-      return;
-    }
-    const name = this.newKeyName().trim();
-    this.addingKey.set(true);
-    this.credentials.add(name, this.newKeyValue().trim()).subscribe((accepted) => {
-      this.addingKey.set(false);
-      if (accepted) {
-        this.newKeyName.set('');
-        this.newKeyValue.set('');
-        this.keyNotice.set({ text: this.translator.t('settings.credentials.added', { name }), kind: 'ok' });
-        this.refreshCounts();
-      } else {
-        this.keyNotice.set({ text: this.keyError(), kind: 'error' });
-      }
-    });
+  protected credentialStatus(key: CredentialName): string {
+    return this.translator.t(`credential.status.${key.status}`);
   }
 
   protected askRemoveKey(name: string): void {
@@ -409,10 +435,16 @@ export class SettingsDialog {
   }
 
   protected removeKey(name: string): void {
+    const revision = ++this.credentialRevision;
     this.removingKey.set(null);
-    this.credentials.remove(name);
     this.keyNotice.set(null);
-    this.refreshCounts();
+    this.credentials.remove(name).subscribe({
+      next: () => this.refreshCounts(),
+      error: (error: unknown) => {
+        if (revision === this.credentialRevision)
+          this.keyNotice.set({ text: messageOf(error), kind: 'error' });
+      },
+    });
   }
 
   // --- Backup: export ---------------------------------------------------------
@@ -446,17 +478,22 @@ export class SettingsDialog {
     this.exporting.set(true);
     this.exportNotice.set(null);
     const fileName = `unbi-settings-${new Date().toISOString().slice(0, 10)}.ucfg`;
-    this.settings.exportBundle([...this.chosen()], this.protect() ? this.password() : '').subscribe({
-      next: (blob) => {
-        this.exporting.set(false);
-        download(blob, fileName);
-        this.exportNotice.set({ text: this.translator.t('settings.backup.exported', { file: fileName }), kind: 'ok' });
-      },
-      error: (error: unknown) => {
-        this.exporting.set(false);
-        this.exportNotice.set({ text: messageOf(error), kind: 'error' });
-      },
-    });
+    this.settings
+      .exportBundle([...this.chosen()], this.protect() ? this.password() : '')
+      .subscribe({
+        next: (blob) => {
+          this.exporting.set(false);
+          download(blob, fileName);
+          this.exportNotice.set({
+            text: this.translator.t('settings.backup.exported', { file: fileName }),
+            kind: 'ok',
+          });
+        },
+        error: (error: unknown) => {
+          this.exporting.set(false);
+          this.exportNotice.set({ text: messageOf(error), kind: 'error' });
+        },
+      });
   }
 
   // --- Backup: import ---------------------------------------------------------
@@ -480,7 +517,11 @@ export class SettingsDialog {
         this.inspecting.set(false);
         this.inspection.set(found);
         this.importChosen.set(
-          new Set(found.sections.filter((section) => section.known && section.count > 0).map((section) => section.id)),
+          new Set(
+            found.sections
+              .filter((section) => section.known && section.count > 0)
+              .map((section) => section.id),
+          ),
         );
       },
       error: (error: unknown) => {
@@ -518,19 +559,21 @@ export class SettingsDialog {
     this.importNotice.set(null);
     // A report describes one attempt; one that failed must not leave the last success on screen.
     this.report.set(null);
-    this.settings.importBundle(file, [...this.importChosen()], this.importPassword(), this.conflicts()).subscribe({
-      next: (report) => {
-        this.importing.set(false);
-        this.report.set(report);
-        this.importNotice.set({ text: this.translator.t('settings.backup.done'), kind: 'ok' });
-        this.refresh();
-        this.reloadStores();
-      },
-      error: (error: unknown) => {
-        this.importing.set(false);
-        this.importNotice.set({ text: messageOf(error), kind: 'error' });
-      },
-    });
+    this.settings
+      .importBundle(file, [...this.importChosen()], this.importPassword(), this.conflicts())
+      .subscribe({
+        next: (report) => {
+          this.importing.set(false);
+          this.report.set(report);
+          this.importNotice.set({ text: this.translator.t('settings.backup.done'), kind: 'ok' });
+          this.refresh();
+          this.reloadStores();
+        },
+        error: (error: unknown) => {
+          this.importing.set(false);
+          this.importNotice.set({ text: messageOf(error), kind: 'error' });
+        },
+      });
   }
 
   /** The label for a section id: the editor's own words where it has them, the engine's otherwise. */
@@ -577,13 +620,12 @@ export class SettingsDialog {
   }
 
   private reset(): void {
+    this.credentialRevision++;
     this.pending.set(null);
     this.storageNotice.set(null);
     this.generalNotice.set(null);
     this.keyNotice.set(null);
     this.removingKey.set(null);
-    this.newKeyName.set('');
-    this.newKeyValue.set('');
     this.chosen.set(new Set());
     this.protect.set(false);
     this.password.set('');

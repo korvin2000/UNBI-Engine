@@ -52,7 +52,8 @@ public class ProfileController {
                     .put("id", declared.id())
                     .put("label", declared.label())
                     .put("testable", declared.testable())
-                    .put("count", store.list(declared.id()).size());
+                    .put("count", store.list(declared.id()).size())
+                    .putArray("importFormats").addAll(declared.importFormats().stream().map(NODES::stringNode).toList());
         }
         return root;
     }
@@ -65,6 +66,7 @@ public class ProfileController {
         shape.put("id", declared.id());
         shape.put("label", declared.label());
         shape.put("testable", declared.testable());
+        declared.importFormats().forEach(shape.putArray("importFormats")::add);
         var fields = shape.putArray("fields");
         declared.fields().forEach(field -> fields.add(CatalogCodec.inputNode(field)));
         var profiles = root.putArray("profiles");

@@ -3,6 +3,73 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, catchError, map, of, tap } from 'rxjs';
 import { ENGINE_CONFIG } from '../engine.config';
 import { NodeInputSpec, parseInputSpec } from '../catalog/catalog.models';
+import type { CredentialDraft } from '../credentials/credential.service';
+
+/** One OpenAPI server variable exposed for review before an endpoint patch is applied. */
+export interface OpenApiServerVariable {
+  readonly default?: string;
+  readonly enum?: readonly string[];
+  readonly required: boolean;
+  readonly value?: string;
+}
+
+/** A server candidate returned by the bounded OpenAPI endpoint metadata projection. */
+export interface OpenApiServer {
+  readonly id: string;
+  readonly url: string;
+  readonly variables: Readonly<Record<string, OpenApiServerVariable>>;
+}
+
+/** A recognized generation operation, or an unavailable candidate with its concrete reason. */
+export interface OpenApiOperation {
+  readonly id: string;
+  readonly label: string;
+  readonly path: string;
+  readonly apiFormat: string;
+  readonly available: boolean;
+  readonly reason?: string;
+}
+
+/** One complete OpenAPI security alternative; unavailable alternatives remain visible for review. */
+export interface OpenApiSecurityAlternative {
+  readonly id: string;
+  readonly label: string;
+  readonly available: boolean;
+  readonly reason?: string;
+  readonly auth?: string;
+}
+
+/** A non-secret parser or projection finding, addressed to its source document pointer. */
+export interface OpenApiImportIssue {
+  readonly pointer: string;
+  readonly severity: 'error' | 'warning';
+  readonly message: string;
+}
+
+/** The exact review selections sent back with an OpenAPI endpoint import request. */
+export interface OpenApiImportRequest {
+  readonly document: string;
+  readonly documentUri?: string;
+  readonly operation?: string;
+  readonly server?: string;
+  readonly variables?: Readonly<Record<string, string>>;
+  readonly securityAlternative?: string;
+  readonly apiFormat?: string;
+}
+
+/** A secret-free OpenAPI import preview. Applying its values never persists a profile by itself. */
+export interface OpenApiImportResult {
+  readonly servers: readonly OpenApiServer[];
+  readonly operations: readonly OpenApiOperation[];
+  readonly securityAlternatives: readonly OpenApiSecurityAlternative[];
+  readonly values: Readonly<Record<string, unknown>>;
+  readonly credentialDraft: CredentialDraft | null;
+  readonly issues: readonly OpenApiImportIssue[];
+  readonly complete: boolean;
+  readonly selectedServer?: string;
+  readonly selectedOperation?: string;
+  readonly selectedSecurityAlternative?: string;
+}
 
 /** The fields one kind of profile holds, as the engine declares them. */
 export interface ProfileSchema {
@@ -10,6 +77,7 @@ export interface ProfileSchema {
   readonly label: string;
   /** Whether the dialog may offer a Test button that tries the draft out before it is saved. */
   readonly testable: boolean;
+  readonly importFormats: readonly string[];
   readonly fields: readonly NodeInputSpec[];
 }
 
@@ -50,6 +118,8 @@ export interface ProfileEditRequest {
   readonly schema: string;
   /** The profile to open on, or '' for whichever comes first. */
   readonly current: string;
+  /** Monotonic identity for guarding asynchronous dialog work. */
+  readonly id?: number;
 }
 
 interface SchemaState {
@@ -76,11 +146,12 @@ const EMPTY: SchemaState = { schema: null, profiles: [], error: '' };
 export class ProfileService {
   private readonly http = inject(HttpClient);
   private readonly config = inject(ENGINE_CONFIG);
-
   private readonly states = signal<ReadonlyMap<string, SchemaState>>(new Map());
   private readonly known = signal<readonly ProfileSchemaSummary[]>([]);
+
   private readonly request = signal<ProfileEditRequest | null>(null);
   private resolve: ((chosen: string | null) => void) | null = null;
+  private nextRequestId = 0;
   private readonly loading = new Set<string>();
 
   /** Non-null while the dialog is open; the dialog renders from this. */
@@ -104,15 +175,18 @@ export class ProfileService {
       )
       .subscribe();
   }
-
-  /** Fetches a schema and its profiles, once, unless asked to refresh. */
   load(schema: string, refresh = false): void {
     if (!schema || (this.states().has(schema) && !refresh) || this.loading.has(schema)) {
       return;
     }
     this.loading.add(schema);
+    if (refresh) {
+      this.store(schema, EMPTY);
+    }
     this.http
-      .get<Record<string, unknown>>(`${this.config.httpBase}/api/profiles/${encodeURIComponent(schema)}`)
+      .get<Record<string, unknown>>(
+        `${this.config.httpBase}/api/profiles/${encodeURIComponent(schema)}`,
+      )
       .pipe(
         tap((body) => this.store(schema, parseSchemaState(body))),
         catchError((error: unknown) => {
@@ -125,14 +199,18 @@ export class ProfileService {
 
   save(schema: string, draft: ProfileDraft): Observable<Profile> {
     return this.http
-      .post<Record<string, unknown>>(`${this.config.httpBase}/api/profiles/${encodeURIComponent(schema)}`, draft)
+      .post<Record<string, unknown>>(
+        `${this.config.httpBase}/api/profiles/${encodeURIComponent(schema)}`,
+        draft,
+      )
       .pipe(
         map(parseProfile),
         tap((saved) => {
           const current = this.states().get(schema) ?? EMPTY;
-          const profiles = [...current.profiles.filter((profile) => profile.id !== saved.id), saved].sort(
-            (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
-          );
+          const profiles = [
+            ...current.profiles.filter((profile) => profile.id !== saved.id),
+            saved,
+          ].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
           this.store(schema, { ...current, profiles, error: '' });
         }),
       );
@@ -146,7 +224,10 @@ export class ProfileService {
       .pipe(
         tap(() => {
           const current = this.states().get(schema) ?? EMPTY;
-          this.store(schema, { ...current, profiles: current.profiles.filter((profile) => profile.id !== id) });
+          this.store(schema, {
+            ...current,
+            profiles: current.profiles.filter((profile) => profile.id !== id),
+          });
         }),
       );
   }
@@ -169,6 +250,16 @@ export class ProfileService {
         ),
       );
   }
+  /** Runs the bounded, server-side OpenAPI metadata projection without saving a profile. */
+  importOpenApi(schema: string, request: OpenApiImportRequest): Observable<OpenApiImportResult> {
+    return this.http
+      .post<Record<string, unknown>>(
+        `${this.config.httpBase}/api/profiles/${encodeURIComponent(schema)}/import/openapi`,
+        request,
+        { withCredentials: true },
+      )
+      .pipe(map(parseOpenApiImportResult));
+  }
 
   /**
    * Opens the dialog. Resolves with the id of the profile the user finished on, or null if the
@@ -177,14 +268,18 @@ export class ProfileService {
   edit(request: ProfileEditRequest): Promise<string | null> {
     this.settle(null);
     this.load(request.schema, true);
-    this.request.set(request);
+    const identified = { ...request, id: ++this.nextRequestId };
+    this.request.set(identified);
     return new Promise((resolve) => {
       this.resolve = resolve;
     });
   }
 
   /** Called by the dialog: done, pointing the node at this profile. */
-  finish(chosen: string | null): void {
+  finish(chosen: string | null, requestId?: number): void {
+    if (requestId !== undefined && this.request()?.id !== requestId) {
+      return;
+    }
     this.settle(chosen);
   }
 
@@ -206,6 +301,9 @@ export function parseSchemaState(body: Record<string, unknown>): SchemaState {
     id: String(raw['id'] ?? ''),
     label: String(raw['label'] ?? ''),
     testable: raw['testable'] === true,
+    importFormats: Array.isArray(raw['importFormats'])
+      ? raw['importFormats'].filter((value): value is string => typeof value === 'string')
+      : [],
     fields: Array.isArray(raw['fields']) ? raw['fields'].map(parseInputSpec) : [],
   };
   const profiles = Array.isArray(body['profiles']) ? body['profiles'].map(parseProfile) : [];
@@ -223,6 +321,123 @@ function parseProfile(raw: unknown): Profile {
     updatedAt: String(profile['updatedAt'] ?? ''),
     values: values && typeof values === 'object' ? (values as Record<string, unknown>) : {},
   };
+}
+
+function parseOpenApiImportResult(raw: Record<string, unknown>): OpenApiImportResult {
+  const draft = raw['credentialDraft'];
+  return {
+    servers: arrayOf(raw['servers']).map(parseOpenApiServer),
+    operations: arrayOf(raw['operations']).map(parseOpenApiOperation),
+    securityAlternatives: arrayOf(raw['securityAlternatives']).map(parseOpenApiSecurity),
+    values: objectOf(raw['values']),
+    credentialDraft: draft && typeof draft === 'object' ? parseCredentialDraft(draft) : null,
+    issues: arrayOf(raw['issues']).map(parseOpenApiIssue),
+    complete: raw['complete'] === true,
+    selectedServer: optionalString(raw['selectedServer']),
+    selectedOperation: optionalString(raw['selectedOperation']),
+    selectedSecurityAlternative: optionalString(raw['selectedSecurityAlternative']),
+  };
+}
+
+function parseOpenApiServer(raw: unknown): OpenApiServer {
+  const value = objectOf(raw);
+  const rawVariables = objectOf(value['variables']);
+  const variables: Record<string, OpenApiServerVariable> = {};
+  for (const [name, candidate] of Object.entries(rawVariables)) {
+    const variable = objectOf(candidate);
+    const choices = Array.isArray(variable['enum'])
+      ? variable['enum'].filter((item): item is string => typeof item === 'string')
+      : undefined;
+    variables[name] = {
+      default: optionalString(variable['default']),
+      enum: choices,
+      required: variable['required'] === true,
+      value: optionalString(variable['value']),
+    };
+  }
+  return {
+    id: String(value['id'] ?? ''),
+    url: String(value['url'] ?? ''),
+    variables,
+  };
+}
+
+function parseOpenApiOperation(raw: unknown): OpenApiOperation {
+  const value = objectOf(raw);
+  return {
+    id: String(value['id'] ?? ''),
+    label: String(value['label'] ?? ''),
+    path: String(value['path'] ?? ''),
+    apiFormat: String(value['apiFormat'] ?? ''),
+    available: value['available'] === true,
+    reason: optionalString(value['reason']),
+  };
+}
+
+function parseOpenApiSecurity(raw: unknown): OpenApiSecurityAlternative {
+  const value = objectOf(raw);
+  return {
+    id: String(value['id'] ?? ''),
+    label: String(value['label'] ?? ''),
+    available: value['available'] === true,
+    reason: optionalString(value['reason']),
+    auth: optionalString(value['auth']),
+  };
+}
+
+function parseOpenApiIssue(raw: unknown): OpenApiImportIssue {
+  const value = objectOf(raw);
+  const severity = value['severity'] === 'warning' ? 'warning' : 'error';
+  return {
+    pointer: String(value['pointer'] ?? ''),
+    severity,
+    message: String(value['message'] ?? ''),
+  };
+}
+
+function parseCredentialDraft(raw: object): CredentialDraft | null {
+  const value = objectOf(raw);
+  const type = value['type'];
+  if (type !== 'api_key' && type !== 'basic' && type !== 'oauth2' && type !== 'codex') return null;
+  const draftType: CredentialDraft['type'] = type;
+  const requiredFields = Array.isArray(value['requiredFields'])
+    ? value['requiredFields'].filter((item): item is string => typeof item === 'string')
+    : undefined;
+  const flows = Array.isArray(value['flows'])
+    ? value['flows'].map((item) => {
+        const flow = objectOf(item);
+        const grantType = String(flow['grantType'] ?? '');
+        return {
+          id: String(flow['id'] ?? ''),
+          grantType,
+          authorizationUrl: optionalString(flow['authorizationUrl']),
+          tokenUrl: optionalString(flow['tokenUrl']),
+          refreshUrl: optionalString(flow['refreshUrl']),
+          deviceAuthorizationUrl: optionalString(flow['deviceAuthorizationUrl']),
+        };
+      })
+    : undefined;
+  return {
+    type: draftType,
+    configuration: objectOf(value['configuration']),
+    requiredFields,
+    flows,
+    complete: value['complete'] === true,
+  };
+}
+
+function arrayOf(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function objectOf(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
 
 /** The engine's own sentence when it sent one, since it is the specific half of the answer. */

@@ -1,0 +1,17 @@
+openapi: 3.1.0
+info: {title: Gateway, version: '1'}
+servers:
+  - url: https://gateway.example/v1
+paths:
+  /responses:
+    post:
+      responses:
+        '200': {description: ok}
+security:
+  - password: []
+components:
+  securitySchemes:
+    password:
+      type: http
+      scheme: basic
+      x-password: ignored-password-secret

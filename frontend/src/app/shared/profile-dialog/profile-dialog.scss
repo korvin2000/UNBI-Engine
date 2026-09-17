@@ -87,7 +87,9 @@ $layer: 105;
   height: 24px;
   border-radius: var(--radius-sm);
   color: var(--text-faint);
-  transition: background var(--tempo) var(--ease), color var(--tempo) var(--ease);
+  transition:
+    background var(--tempo) var(--ease),
+    color var(--tempo) var(--ease);
 
   &:hover {
     background: var(--panel-raised);
@@ -123,7 +125,9 @@ $layer: 105;
   border-radius: var(--radius);
   color: var(--text-muted);
   font-size: 12px;
-  transition: border-color var(--tempo) var(--ease), color var(--tempo) var(--ease);
+  transition:
+    border-color var(--tempo) var(--ease),
+    color var(--tempo) var(--ease);
 
   &:hover,
   &.is-active {
@@ -291,7 +295,9 @@ $layer: 105;
   font-size: 12.5px;
   font-family: inherit;
   outline: none;
-  transition: border-color var(--tempo) var(--ease), box-shadow var(--tempo) var(--ease);
+  transition:
+    border-color var(--tempo) var(--ease),
+    box-shadow var(--tempo) var(--ease);
 
   &::placeholder {
     color: var(--text-faint);
@@ -391,7 +397,9 @@ $layer: 105;
   color: var(--text);
   font-size: 12px;
   cursor: pointer;
-  transition: background var(--tempo) var(--ease), border-color var(--tempo) var(--ease);
+  transition:
+    background var(--tempo) var(--ease),
+    border-color var(--tempo) var(--ease);
 
   &:hover:not(:disabled) {
     border-color: var(--node-border-hover);
@@ -432,5 +440,39 @@ $layer: 105;
   &:hover:not(:disabled) {
     background: var(--danger);
     color: var(--canvas);
+  }
+}
+
+.import-panel {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text-muted);
+  summary {
+    cursor: pointer;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .field-row {
+    margin: 10px 0;
+  }
+  textarea {
+    width: 100%;
+    resize: vertical;
+    font-family: monospace;
+  }
+  select {
+    width: 100%;
+  }
+  p {
+    overflow-wrap: anywhere;
+  }
+  h3 {
+    font-size: 11px;
+  }
+  code {
+    color: var(--text);
   }
 }

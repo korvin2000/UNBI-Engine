@@ -2,9 +2,11 @@ package com.unbi.engine.settings;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.unbi.engine.config.DataDirectory;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpStatusCode;
@@ -36,6 +38,9 @@ class SettingsApiTest {
     @LocalServerPort
     int port;
 
+
+    @Autowired
+    DataDirectory dataDirectory;
     private final JsonMapper mapper = JsonMapper.builder().build();
 
     @Test
@@ -83,6 +88,24 @@ class SettingsApiTest {
         // And back to the default, so the other tests in this class are not affected by the order.
         var restored = post("/api/settings/paths", "{\"target\":\"workflows\",\"directory\":\"\"}");
         assertThat(restored.path("paths").path("workflows").path("configured").asString()).isEmpty();
+    }
+
+    @Test
+    void dataRelocationReportsConflictWhileAnAuthenticationLeaseIsHeld() {
+        try (var lease = dataDirectory.acquireLease()) {
+            var response = RestClient.create()
+                    .post()
+                    .uri("http://localhost:" + port + "/api/settings/paths")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("{\"target\":\"data\",\"directory\":"
+                            + mapper.writeValueAsString(elsewhere.toString())
+                            + "}")
+                    .exchange((request, reply) -> new Reply(reply.getStatusCode(), reply.bodyTo(String.class)));
+
+            assertThat(response.status().value()).isEqualTo(409);
+            assertThat(response.body()).contains("finish or cancel authentication");
+            assertThat(dataDirectory.root()).isEqualTo(home);
+        }
     }
 
     @Test

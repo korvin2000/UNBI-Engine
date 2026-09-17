@@ -238,6 +238,35 @@ class ModelListingReaderTest {
     }
 
     @Test
+    @DisplayName("normalizes Codex model listings without inventing prices or capabilities")
+    void codexCatalog() {
+        var normalized = ModelListingReader.normalizeCodex(MAPPER.readTree("""
+                {"models":[{
+                  "slug":"gpt-5-codex",
+                  "display_name":"GPT-5 Codex",
+                  "supported_reasoning_levels":[
+                    {"effort":"medium"},{"effort":"high"}],
+                  "default_reasoning_level":{"effort":"high"},
+                  "input_modalities":["text","image"],
+                  "context_window":400000,
+                  "supports_search_tool":true
+                }]}"""));
+
+        var model = only(normalized.toString());
+        assertThat(model.id()).isEqualTo("gpt-5-codex");
+        assertThat(model.label()).isEqualTo("GPT-5 Codex");
+        assertThat(model.apiFormat()).isEqualTo(ApiFormat.RESPONSES);
+        assertThat(model.contextWindow()).isEqualTo(400_000);
+        assertThat(model.efforts()).containsExactly("medium", "high");
+        assertThat(ModelListingReader.inputModalities(normalized)).containsExactly("image", "text");
+        assertThat(model.defaultEffort()).isEqualTo("high");
+        assertThat(model.capabilities()).containsExactlyInAnyOrder(
+                Capability.REASONING, Capability.VISION, Capability.WEB_SEARCH);
+        assertThat(model.inputPer1M()).isNull();
+        assertThat(model.outputPer1M()).isNull();
+    }
+
+    @Test
     @DisplayName("a body with no model list is an empty result rather than a failure")
     void unreadableBody() {
         assertThat(ModelListingReader.read(MAPPER.readTree("{\"models\":[]}"))).isEmpty();

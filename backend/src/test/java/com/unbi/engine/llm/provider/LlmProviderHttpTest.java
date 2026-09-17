@@ -90,7 +90,8 @@ class LlmProviderHttpTest {
         var endpoint = new EndpointSpec(
                 "local", "custom", baseUrl, EndpointSpec.AuthScheme.BEARER, "key",
                 Map.of("X-Title", "UNBI-Engine"), RatePolicy.UNLIMITED, 5000, stream,
-                TokenUsage.CachedTokenMode.INCLUDED, false);
+                TokenUsage.CachedTokenMode.INCLUDED, false, ApiFormat.CHAT_COMPLETIONS,
+                EndpointSpec.ResponsesDialect.STANDARD, "header", "");
         return Fixtures.searching(Fixtures.model(endpoint), WebSearchMode.NONE, format);
     }
 
@@ -135,7 +136,7 @@ class LlmProviderHttpTest {
         }
 
         @Test
-        @DisplayName("a gateway error arrives classified, with the gateway's own words in it")
+        @DisplayName("a gateway error arrives classified without exposing its response body")
         void errorsAreClassified() {
             respond("/chat/completions", exchange -> send(exchange, 429, "application/json",
                     "{\"error\":{\"message\":\"slow down\"}}"));
@@ -146,8 +147,8 @@ class LlmProviderHttpTest {
                     .isInstanceOfSatisfying(LlmFailure.class, failure -> {
                         assertThat(failure.kind()).isEqualTo(LlmFailure.Kind.RATE_LIMIT);
                         assertThat(failure.isRetryable()).isTrue();
-                    })
-                    .hasMessageContaining("slow down");
+                        assertThat(failure).hasMessageNotContaining("slow down");
+                    });
         }
 
         @Test
@@ -166,17 +167,18 @@ class LlmProviderHttpTest {
         }
 
         @Test
-        @DisplayName("an HTML error page is reported as itself, not as a parse failure")
-        void nonJsonErrorsStillCarryTheirBody() {
+        @DisplayName("an HTML error page remains a classified server failure without body leakage")
+        void nonJsonErrorsAreClassifiedWithoutBodyLeakage() {
             respond("/chat/completions", exchange ->
-                    send(exchange, 502, "text/html", "<html>Bad Gateway</html>"));
+                    send(exchange, 502, "text/html", "<html>Bad Gateway secret=do-not-leak</html>"));
 
             assertThatThrownBy(() -> new ChatCompletionsProvider(new HttpTransport())
                             .complete(call(model(false, ApiFormat.CHAT_COMPLETIONS)), credential(),
                                     StreamSink.DISCARD))
-                    .isInstanceOfSatisfying(LlmFailure.class,
-                            failure -> assertThat(failure.kind()).isEqualTo(LlmFailure.Kind.SERVER))
-                    .hasMessageContaining("Bad Gateway");
+                    .isInstanceOfSatisfying(LlmFailure.class, failure -> {
+                        assertThat(failure.kind()).isEqualTo(LlmFailure.Kind.SERVER);
+                        assertThat(failure).hasMessageNotContaining("do-not-leak");
+                    });
         }
     }
 
@@ -212,7 +214,102 @@ class LlmProviderHttpTest {
         }
 
         @Test
-        @DisplayName("cancelling stops mid-answer instead of waiting for the model to finish")
+        @DisplayName("a Codex-compatible binary media type still requires and parses SSE frames")
+        void codexCompatibleBinaryMediaTypeStillUsesSseParser() {
+            respond("/chat/completions", exchange ->
+                    send(exchange, 200, "application/octet-stream", SSE));
+
+            var chunks = new StringBuilder();
+            var result = new ChatCompletionsProvider(new HttpTransport()).complete(
+                    call(model(true, ApiFormat.CHAT_COMPLETIONS)), credential(), chunks::append);
+
+            assertThat(chunks.toString()).isEqualTo("Hello");
+            assertThat(result.text()).isEqualTo("Hello");
+            assertThat(result.finishReason()).isEqualTo(FinishReason.STOP);
+        }
+
+        @Test
+        @DisplayName("a JSON media label is tolerated only when its body is actually SSE")
+        void jsonMediaLabelStillRequiresSseFrames() {
+            respond("/chat/completions", exchange ->
+                    send(exchange, 200, "application/json", SSE));
+
+            var result = new ChatCompletionsProvider(new HttpTransport()).complete(
+                    call(model(true, ApiFormat.CHAT_COMPLETIONS)), credential(), StreamSink.DISCARD);
+            assertThat(result.text()).isEqualTo("Hello");
+        }
+
+        @Test
+        @DisplayName("a missing stream media type is accepted only after an SSE field is observed")
+        void missingStreamMediaTypeStillRequiresSseShape() {
+            respond("/chat/completions", exchange -> {
+                try {
+                    var bytes = SSE.getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    exchange.getResponseBody().write(bytes);
+                } catch (IOException failure) {
+                    throw new IllegalStateException(failure);
+                }
+            });
+
+            var result = new ChatCompletionsProvider(new HttpTransport()).complete(
+                    call(model(true, ApiFormat.CHAT_COMPLETIONS)), credential(), StreamSink.DISCARD);
+            assertThat(result.text()).isEqualTo("Hello");
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.ValueSource(strings = {
+                "<!doctype html><html><body>proxy failure</body></html>",
+                "{\"error\":\"proxy failure\"}"
+        })
+        @DisplayName("a successful non-SSE body is rejected without being treated as a stream")
+        void successfulNonSseBodiesAreRejected(String body) {
+            respond("/chat/completions", exchange ->
+                    send(exchange, 200, "application/octet-stream", body));
+
+            assertThatThrownBy(() -> new ChatCompletionsProvider(new HttpTransport()).complete(
+                    call(model(true, ApiFormat.CHAT_COMPLETIONS)), credential(), StreamSink.DISCARD))
+                    .isInstanceOfSatisfying(LlmFailure.class, failure -> {
+                        assertThat(failure.kind()).isEqualTo(LlmFailure.Kind.RESPONSE_FORMAT);
+                        assertThat(failure).hasMessageNotContaining("proxy failure");
+                    });
+        }
+
+        @Test
+        @DisplayName("a declared SSE media type does not make an HTML body a successful answer")
+        void declaredSseTypeStillRequiresTerminalFrames() {
+            respond("/chat/completions", exchange ->
+                    send(exchange, 200, "text/event-stream", "<html>proxy failure</html>"));
+
+            assertThatThrownBy(() -> new ChatCompletionsProvider(new HttpTransport()).complete(
+                    call(model(true, ApiFormat.CHAT_COMPLETIONS)), credential(), StreamSink.DISCARD))
+                    .isInstanceOfSatisfying(LlmFailure.class, failure -> {
+                        assertThat(failure.kind()).isEqualTo(LlmFailure.Kind.RESPONSE_FORMAT);
+                        assertThat(failure).hasMessageNotContaining("proxy failure");
+                    });
+        }
+
+        @Test
+        @DisplayName("a coalesced stream media header still uses strict SSE parsing")
+        void coalescedStreamMediaHeaderStillUsesSseParsing() {
+            respond("/chat/completions", exchange -> {
+                try {
+                    var bytes = SSE.getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type",
+                            "text/event-stream, text/event-stream");
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    exchange.getResponseBody().write(bytes);
+                } catch (IOException failure) {
+                    throw new IllegalStateException(failure);
+                }
+            });
+
+            var result = new ChatCompletionsProvider(new HttpTransport()).complete(
+                    call(model(true, ApiFormat.CHAT_COMPLETIONS)), credential(), StreamSink.DISCARD);
+            assertThat(result.text()).isEqualTo("Hello");
+        }
+        @Test
+        @DisplayName("cancellation stops mid-answer and reports cancellation rather than partial success")
         void cancellationStopsReadingTheStream() {
             respond("/chat/completions", exchange -> send(exchange, 200, "text/event-stream", SSE));
             var stop = new AtomicBoolean();
@@ -222,7 +319,6 @@ class LlmProviderHttpTest {
                 @Override
                 public void chunk(String text) {
                     chunks.append(text);
-                    // Stop as soon as anything has arrived.
                     stop.set(true);
                 }
 
@@ -232,14 +328,14 @@ class LlmProviderHttpTest {
                 }
             };
 
-            var result = new ChatCompletionsProvider(new HttpTransport())
-                    .complete(call(model(true, ApiFormat.CHAT_COMPLETIONS)), credential(), sink);
+            assertThatThrownBy(() -> new ChatCompletionsProvider(new HttpTransport())
+                            .complete(call(model(true, ApiFormat.CHAT_COMPLETIONS)), credential(), sink))
+                    .isInstanceOfSatisfying(LlmFailure.class,
+                            failure -> assertThat(failure.kind()).isEqualTo(LlmFailure.Kind.CANCELLED));
             assertThat(chunks.toString()).isEqualTo("Hel");
-            assertThat(result.text()).isEqualTo("Hel");
         }
-
         @Test
-        @DisplayName("an error on the streaming path is read as text, not as a broken event stream")
+        @DisplayName("an error on the streaming path is classified without exposing response body")
         void streamingErrorsAreClassifiedToo() {
             respond("/chat/completions", exchange -> send(exchange, 401, "application/json",
                     "{\"error\":{\"message\":\"bad key\"}}"));
@@ -250,8 +346,8 @@ class LlmProviderHttpTest {
                     .isInstanceOfSatisfying(LlmFailure.class, failure -> {
                         assertThat(failure.kind()).isEqualTo(LlmFailure.Kind.AUTH);
                         assertThat(failure.isRetryable()).isFalse();
-                    })
-                    .hasMessageContaining("bad key");
+                        assertThat(failure).hasMessageNotContaining("bad key");
+                    });
         }
     }
 
@@ -282,8 +378,8 @@ class LlmProviderHttpTest {
 
             assertThatThrownBy(() -> new ResponsesProvider(new HttpTransport())
                             .complete(call(model(false, ApiFormat.RESPONSES)), credential(), StreamSink.DISCARD))
-                    .isInstanceOf(LlmFailure.class)
-                    .hasMessageContaining("model refused");
+                    .isInstanceOfSatisfying(LlmFailure.class,
+                            failure -> assertThat(failure.kind()).isEqualTo(LlmFailure.Kind.INVALID_REQUEST));
         }
 
         @Test
@@ -309,6 +405,49 @@ class LlmProviderHttpTest {
             assertThat(result.wasTruncated()).isTrue();
             assertThat(result.usage().completionTokens()).isEqualTo(9);
         }
+
+        @Test
+        void strictCodexFixtureAcceptsOnlyCodexResponsesShape() {
+            respond("/responses", exchange -> {
+                try {
+                    var body = MAPPER.readTree(lastBody.get());
+                    var valid = body.path("instructions").isTextual()
+                            && body.path("instructions").asString().equals("rules")
+                            && body.path("stream").asBoolean(false)
+                            && !body.path("store").asBoolean(true)
+                            && !body.has("temperature")
+                            && !body.has("top_p")
+                            && !body.has("max_output_tokens");
+                    if (!valid) {
+                        send(exchange, 400, "application/json", "{\"error\":{\"message\":\"invalid codex shape\"}}");
+                        return;
+                    }
+                    send(exchange, 200, "text/event-stream", """
+                            data: {"type":"response.output_text.delta","delta":"ok"}
+
+                            data: {"type":"response.completed","response":{"status":"completed",
+                            data: "usage":{"input_tokens":1,"output_tokens":1},
+                            data: "output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}}
+
+                            """);
+                } catch (Exception invalidBody) {
+                    throw new IllegalStateException(invalidBody);
+                }
+            });
+            var base = Fixtures.endpoint();
+            var endpoint = new EndpointSpec(
+                    "codex-local", "codex", baseUrl, EndpointSpec.AuthScheme.BEARER, "key",
+                    Map.of(), RatePolicy.UNLIMITED, 5000, true, base.cachedTokenMode(),
+                    false, ApiFormat.RESPONSES, EndpointSpec.ResponsesDialect.CODEX, "header", "");
+            var result = new ResponsesProvider(new HttpTransport()).complete(
+                    new ChatCall(Fixtures.model(endpoint), List.of(
+                            ChatMessage.system("rules"), ChatMessage.user("hello")),
+                            com.unbi.engine.llm.spec.ResponseFormat.TEXT,
+                            com.unbi.engine.llm.spec.SamplingParams.of(0.2, 0.8, 32),
+                            ChatCall.WebSearch.OFF, "", ""),
+                    credential(), StreamSink.DISCARD);
+            assertThat(result.text()).isEqualTo("ok");
+        }
     }
 
     @Nested
@@ -323,12 +462,115 @@ class LlmProviderHttpTest {
             var endpoint = new EndpointSpec(
                     "local", "llamacpp", baseUrl, EndpointSpec.AuthScheme.NONE, "",
                     Map.of(), RatePolicy.UNLIMITED, 5000, false,
-                    TokenUsage.CachedTokenMode.INCLUDED, false);
+                    TokenUsage.CachedTokenMode.INCLUDED, false, ApiFormat.CHAT_COMPLETIONS,
+                    EndpointSpec.ResponsesDialect.STANDARD, "header", "");
 
             new ChatCompletionsProvider(new HttpTransport())
                     .complete(call(Fixtures.model(endpoint)), null, StreamSink.DISCARD);
 
             assertThat(lastHeaders.get()).doesNotContainKey("Authorization");
+        }
+    }
+    @Test
+    void multilineFramesAndUnknownTypesRetainUsage() {
+        respond("/chat/completions", exchange -> send(exchange, 200, "text/event-stream",
+                "\ufeff: comment\r\nid: 1\r\nretry: 100\r\nevent: unknown\r\ndata: {}\r\n\r\n"
+                + "data: {\"choices\": [\r\ndata: {\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}]}\r\n\r\n"
+                + "data: {\"choices\":[],\"usage\":{\"completion_tokens\":7}}\r\n\r\ndata: [DONE]\r\n\r\n"));
+        try (var transport = new HttpTransport()) {
+            var result = new ChatCompletionsProvider(transport).complete(
+                    call(model(true, ApiFormat.CHAT_COMPLETIONS)), credential(), StreamSink.DISCARD);
+            assertThat(result.text()).isEqualTo("hello");
+            assertThat(result.usage().completionTokens()).isEqualTo(7);
+        }
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "data: {malformed}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n",
+            "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n"
+    })
+    void malformedOrUnterminatedStreamsFail(String body) {
+        respond("/chat/completions", exchange -> send(exchange, 200, "text/event-stream", body));
+        try (var transport = new HttpTransport()) {
+            assertThatThrownBy(() -> new ChatCompletionsProvider(transport).complete(
+                    call(model(true, ApiFormat.CHAT_COMPLETIONS)), credential(), StreamSink.DISCARD))
+                    .isInstanceOfSatisfying(LlmFailure.class,
+                            failure -> assertThat(failure.kind()).isEqualTo(LlmFailure.Kind.RESPONSE_FORMAT));
+        }
+    }
+
+    @Test
+    void callbackFailureEscapesUnchanged() {
+        respond("/chat/completions", exchange -> send(exchange, 200, "text/event-stream",
+                "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}]}\n\n"));
+        var failure = new IllegalStateException("consumer failed");
+        try (var transport = new HttpTransport()) {
+            assertThatThrownBy(() -> new ChatCompletionsProvider(transport).complete(
+                    call(model(true, ApiFormat.CHAT_COMPLETIONS)), credential(), text -> { throw failure; }))
+                    .isSameAs(failure);
+        }
+    }
+
+    @Test
+    void responsesEventTypeFallbackStopsAnOtherwiseOpenConnection() throws Exception {
+        var release = new java.util.concurrent.CountDownLatch(1);
+        respond("/responses", exchange -> {
+            try {
+                exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                exchange.sendResponseHeaders(200, 0);
+                exchange.getResponseBody().write(("event: response.completed\n"
+                        + "data: {\"response\":{\"status\":\"completed\",\"output\":[{\"type\":\"message\","
+                        + "\"content\":[{\"type\":\"output_text\",\"text\":\"done\"}]}]}}\n\n")
+                        .getBytes(StandardCharsets.UTF_8));
+                exchange.getResponseBody().flush();
+                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (IOException | InterruptedException failure) {
+                throw new IllegalStateException(failure);
+            }
+        });
+        try (var transport = new HttpTransport(); var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            var future = executor.submit(() -> new ResponsesProvider(transport).complete(
+                    call(model(true, ApiFormat.RESPONSES)), credential(), StreamSink.DISCARD));
+            assertThat(future.get(1, java.util.concurrent.TimeUnit.SECONDS).text()).isEqualTo("done");
+        } finally { release.countDown(); }
+    }
+
+    @Test
+    void streamedErrorCannotBecomeASuccessfulTerminalResponse() {
+        respond("/responses", exchange -> send(exchange, 200, "text/event-stream",
+                "event: error\ndata: {\"code\":\"invalid_api_key\",\"message\":\"distinctive-secret\"}\n\n"));
+        try (var transport = new HttpTransport()) {
+            assertThatThrownBy(() -> new ResponsesProvider(transport).complete(
+                    call(model(true, ApiFormat.RESPONSES)), credential(), StreamSink.DISCARD))
+                    .isInstanceOf(LlmFailure.class).hasMessageNotContaining("distinctive-secret");
+        }
+    }
+    @Test
+    void socketDisconnectAfterOutputIsNotReplayed() {
+        var requests = new java.util.concurrent.atomic.AtomicInteger();
+        respond("/chat/completions", exchange -> {
+            requests.incrementAndGet();
+            try {
+                exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                exchange.sendResponseHeaders(200, 10000);
+                exchange.getResponseBody().write("data: {\"choices\":[{\"delta\":{\"content\":\"visible\"}}]}\n\n"
+                        .getBytes(StandardCharsets.UTF_8));
+                exchange.getResponseBody().flush();
+            } catch (IOException failure) { throw new IllegalStateException(failure); }
+        });
+        try (var transport = new HttpTransport()) {
+            var caller = new com.unbi.engine.llm.runtime.LlmCaller(
+                    new ProviderRegistry(List.of(new ChatCompletionsProvider(transport))),
+                    new com.unbi.engine.llm.auth.CredentialStore(List.of(new com.unbi.engine.llm.auth.NamedCredentials("key"))),
+                    new com.unbi.engine.llm.runtime.PacerRegistry());
+            var output = new StringBuilder();
+            assertThatThrownBy(() -> caller.call(call(model(true, ApiFormat.CHAT_COMPLETIONS)),
+                    new com.unbi.engine.llm.runtime.CallPolicy(false, 3, 0, false, false), output::append, ignored -> {}))
+                    .isInstanceOf(LlmFailure.class);
+            assertThat(output.toString()).isEqualTo("visible");
+            assertThat(requests.get()).isEqualTo(1);
         }
     }
 }

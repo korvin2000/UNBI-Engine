@@ -48,9 +48,24 @@ public interface ProfileSchema {
         return java.util.Optional.empty();
     }
 
+    /**
+     * Validates values after defaults are applied and before a profile is persisted.
+     *
+     * <p>The default is deliberately a no-op so generic schemas remain independent of LLM-specific
+     * rules. Schemas with cross-field or protocol constraints can reject a save without changing
+     * how values are rendered or read.
+     */
+    default void validate(Map<String, Object> values) {
+    }
+
     /** Whether {@link #test} does anything, so the editor can offer the button without asking. */
     default boolean testable() {
         return false;
+    }
+
+    /** Metadata import formats this schema can project into an unsaved draft. */
+    default List<String> importFormats() {
+        return List.of();
     }
 
     /**

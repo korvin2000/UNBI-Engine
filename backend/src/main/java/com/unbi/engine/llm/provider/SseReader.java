@@ -1,28 +1,60 @@
 package com.unbi.engine.llm.provider;
 
-/**
- * The one line of server-sent-event parsing this pack needs.
- *
- * <p>Gateways send `data:` frames with optional `event:` and comment lines between them, and the
- * whole of what we want is the payload of a data frame. Written as a pure function so the streaming
- * path can be tested without a socket — which is what turns "does it handle a comment line?" from a
- * question into an assertion.
- */
+import com.unbi.engine.llm.spec.LlmFailure;
+
+/** Stateful SSE framing. An unterminated final event is deliberately never dispatched. */
 final class SseReader {
+    static final int MAX_FRAME = 16 * 1024 * 1024;
+    record Event(String type, String data) {}
 
-    private SseReader() {}
+    private final StringBuilder data = new StringBuilder();
+    private String type = "";
+    private boolean first = true;
+    private boolean hasData;
+    private long size;
 
-    /**
-     * @return the payload of a {@code data:} line, or null for anything else — a keep-alive comment,
-     *     an {@code event:} name, or the blank line that separates frames
-     */
-    static String dataPayload(String line) {
-        if (line == null || !line.startsWith("data:")) {
-            return null;
+    Event accept(String line) {
+        if (first) {
+            first = false;
+            if (line.startsWith("\ufeff")) line = line.substring(1);
         }
-        // One optional space after the colon is part of the format; further whitespace may be
-        // meaningful inside a payload, so only that one is removed.
-        var payload = line.substring("data:".length());
-        return payload.startsWith(" ") ? payload.substring(1) : payload;
+        if (line.isEmpty()) {
+            var event = hasData ? new Event(type, data.substring(0, data.length() - 1)) : null;
+            data.setLength(0);
+            type = "";
+            hasData = false;
+            size = 0;
+            return event;
+        }
+        size += utf8Size(line) + 1L;
+        if (size > MAX_FRAME) throw malformed();
+        if (line.startsWith(":")) return null;
+        int colon = line.indexOf(':');
+        var field = colon < 0 ? line : line.substring(0, colon);
+        var value = colon < 0 ? "" : line.substring(colon + 1);
+        if (value.startsWith(" ")) value = value.substring(1);
+        switch (field) {
+            case "data" -> { data.append(value).append('\n'); hasData = true; }
+            case "event" -> type = value;
+            default -> { }
+        }
+        return null;
+    }
+
+    private static long utf8Size(String value) {
+        long bytes = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch < 0x80) bytes++;
+            else if (ch < 0x800) bytes += 2;
+            else if (Character.isHighSurrogate(ch) && i + 1 < value.length()
+                    && Character.isLowSurrogate(value.charAt(i + 1))) { bytes += 4; i++; }
+            else bytes += 3;
+        }
+        return bytes;
+    }
+
+    static LlmFailure malformed() {
+        return new LlmFailure(LlmFailure.Kind.RESPONSE_FORMAT, "The endpoint sent an invalid or oversized event");
     }
 }

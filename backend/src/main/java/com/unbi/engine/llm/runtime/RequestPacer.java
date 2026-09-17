@@ -1,7 +1,11 @@
 package com.unbi.engine.llm.runtime;
 
+import com.unbi.engine.llm.spec.LlmFailure;
 import com.unbi.engine.llm.spec.RatePolicy;
+import java.util.Objects;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 /**
  * Client-side throttle for one endpoint: a token bucket, a concurrency ceiling, and a floor on the
@@ -44,20 +48,36 @@ public final class RequestPacer {
      *
      * @return a lease that must be closed, which is why the call site uses try-with-resources
      */
-    public Lease acquire() throws InterruptedException {
-        if (concurrency != null) {
-            concurrency.acquire();
-        }
+    public Lease acquire(BooleanSupplier cancelled) throws InterruptedException {
+        Objects.requireNonNull(cancelled, "cancelled");
+        var acquired = false;
         try {
-            awaitToken();
-            awaitSpacing();
+            awaitPermit(cancelled);
+            acquired = concurrency != null;
+            awaitToken(cancelled);
+            awaitSpacing(cancelled);
+            return this::release;
         } catch (InterruptedException | RuntimeException failure) {
-            // The permit is held from the line above; anything that throws below must hand it back
-            // or the ceiling drops by one for the life of the process.
-            release();
+            // A cancellation can arrive after acquiring the concurrency permit but before dispatch.
+            // Return it here rather than reducing the endpoint's ceiling for the process lifetime.
+            if (acquired) {
+                release();
+            }
             throw failure;
         }
-        return this::release;
+    }
+
+    private void awaitPermit(BooleanSupplier cancelled) throws InterruptedException {
+        if (concurrency == null) {
+            checkCancelled(cancelled);
+            return;
+        }
+        while (true) {
+            checkCancelled(cancelled);
+            if (concurrency.tryAcquire(100, TimeUnit.MILLISECONDS)) {
+                return;
+            }
+        }
     }
 
     private void release() {
@@ -66,12 +86,14 @@ public final class RequestPacer {
         }
     }
 
-    private void awaitToken() throws InterruptedException {
+    private void awaitToken(BooleanSupplier cancelled) throws InterruptedException {
         var perMinute = policy.requestsPerMinute();
         if (perMinute <= 0) {
+            checkCancelled(cancelled);
             return;
         }
         while (true) {
+            checkCancelled(cancelled);
             long waitMillis;
             synchronized (this) {
                 refill(perMinute);
@@ -81,11 +103,12 @@ public final class RequestPacer {
                 }
                 waitMillis = (long) Math.ceil((1 - tokens) * (60_000d / perMinute));
             }
-            clock.sleep(waitMillis);
+            sleepCancellable(waitMillis, cancelled);
         }
     }
 
-    private void awaitSpacing() throws InterruptedException {
+    private void awaitSpacing(BooleanSupplier cancelled) throws InterruptedException {
+        checkCancelled(cancelled);
         var spacing = policy.minRequestSpacingMillis();
         if (spacing <= 0) {
             return;
@@ -97,8 +120,22 @@ public final class RequestPacer {
             nextDispatchAt = slot + spacing;
             waitMillis = slot - now;
         }
-        if (waitMillis > 0) {
-            clock.sleep(waitMillis);
+        sleepCancellable(waitMillis, cancelled);
+    }
+
+    private void sleepCancellable(long waitMillis, BooleanSupplier cancelled) throws InterruptedException {
+        for (var remaining = waitMillis; remaining > 0; ) {
+            checkCancelled(cancelled);
+            var slice = Math.min(100, remaining);
+            clock.sleep(slice);
+            remaining -= slice;
+        }
+        checkCancelled(cancelled);
+    }
+
+    private static void checkCancelled(BooleanSupplier cancelled) {
+        if (cancelled.getAsBoolean() || Thread.currentThread().isInterrupted()) {
+            throw new LlmFailure(LlmFailure.Kind.CANCELLED, "Cancelled while waiting for a request slot");
         }
     }
 

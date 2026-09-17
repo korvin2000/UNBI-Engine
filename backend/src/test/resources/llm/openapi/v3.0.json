@@ -1,0 +1,8 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "Gateway", "version": "1"},
+  "servers": [{"url": "https://gateway.example/v1"}],
+  "paths": {"/v1/chat/completions": {"post": {"responses": {"200": {"description": "ok"}}}}},
+  "security": [{"key": []}],
+  "components": {"securitySchemes": {"key": {"type": "apiKey", "in": "header", "name": "X-API-Key", "example": "ignored-example-secret", "default": "ignored-default-secret"}}}
+}

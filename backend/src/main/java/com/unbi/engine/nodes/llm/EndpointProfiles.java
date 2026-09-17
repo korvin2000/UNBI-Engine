@@ -7,7 +7,9 @@ import com.unbi.engine.core.node.ValueContext;
 import com.unbi.engine.core.node.Widget;
 import com.unbi.engine.core.type.Types;
 import com.unbi.engine.llm.auth.CredentialStore;
+import com.unbi.engine.llm.auth.RequestAuthorization;
 import com.unbi.engine.llm.discovery.GatewayDirectory;
+import com.unbi.engine.llm.spec.ApiFormat;
 import com.unbi.engine.llm.spec.EndpointSpec;
 import com.unbi.engine.llm.spec.ProviderProfile;
 import com.unbi.engine.llm.spec.RatePolicy;
@@ -67,28 +69,56 @@ public class EndpointProfiles implements ProfileSchema {
     }
 
     @Override
+    public List<String> importFormats() {
+        return List.of("openapi");
+    }
+
+    @Override
+    public void validate(Map<String, Object> values) {
+        build(new ValueContext(withDefaults(values)));
+    }
+
+    @Override
     public List<NodeInput> fields() {
         var fields = new ArrayList<NodeInput>();
         fields.add(setting("gateway", "Gateway", gateways(), "openrouter",
                 "The kind of server, which sets how it authenticates, which wire format it speaks and "
                         + "how it counts tokens. Anything below left at \"From gateway\" follows it."));
         fields.add(setting("baseUrl", "Base URL", Widget.TextField.of("https://host/v1"), "",
-                "Where the OpenAI-compatible API lives, up to and including /v1. Never guessed: "
-                        + "this is the one thing that differs on every machine."));
+                "The API base URL. Leave blank for the built-in ChatGPT/Codex endpoint; "
+                        + "other gateways require an explicit URL."));
         fields.add(setting("auth", "Authentication", Widget.Dropdown.of(
                         FROM_GATEWAY, "From gateway",
                         "none", "None",
-                        "bearer", "API key",
+                        "bearer", "Bearer token",
+                        "api_key", "Named API key",
+                        "basic", "Username and password",
+                        "oauth2", "OAuth 2.0",
                         "codex", "Codex account"), FROM_GATEWAY,
                 "How the request proves who is asking."));
         fields.add(setting("credential", "Credential", new Widget.Credential(), "",
-                "The name of a key the engine holds — never the key itself. Add one here, or set "
-                        + "UNBI_LLM_KEY_<NAME> in the engine's environment. Ignored when "
-                        + "authentication is None."));
+                "The name of a credential the engine holds — never the credential itself. Add one here, or "
+                        + "set a compatible environment/property source."));
+        fields.add(new NodeInput("apiKeyLocation", "API Key Location", Types.TEXT, false, false,
+                Widget.Dropdown.of("header", "Header", "query", "Query", "cookie", "Cookie"), "header",
+                "Where a named API key is placed.", false, NodeInput.ShowWhen.is("auth", "api_key")));
+        fields.add(new NodeInput("apiKeyName", "API Key Name", Types.TEXT, false, false,
+                Widget.TextField.of("X-API-Key"), "",
+                "Header, query parameter, or cookie name for a named API key.", false,
+                NodeInput.ShowWhen.is("auth", "api_key")));
+        fields.add(advanced("apiFormat", "API Format", Widget.Dropdown.of(
+                        FROM_GATEWAY, "From gateway",
+                        "chat_completions", "Chat Completions",
+                        "responses", "Responses"), FROM_GATEWAY,
+                "The request protocol. From gateway preserves the built-in default."));
+        fields.add(advanced("responsesDialect", "Responses Dialect", Widget.Dropdown.of(
+                        FROM_GATEWAY, "From gateway",
+                        "standard", "Standard",
+                        "codex", "Codex"), FROM_GATEWAY,
+                "The Responses request shape. Codex requires Responses streaming and store=false."));
         fields.add(setting("stream", "Streaming", Widget.Dropdown.of(
                         FROM_GATEWAY, "From gateway", "on", "On", "off", "Off"), FROM_GATEWAY,
-                "Also a correctness setting on gateways whose buffered path mixes up overlapping "
-                        + "requests."));
+                "Also a correctness setting on gateways whose buffered path mixes up overlapping requests."));
         fields.add(setting("timeoutSeconds", "Timeout", new Widget.NumberField(5, 3600, 5, "s", false), 120d,
                 null));
         fields.add(advanced("cachedTokens", "Cached Token Counting", Widget.Dropdown.of(
@@ -150,7 +180,7 @@ public class EndpointProfiles implements ProfileSchema {
             return Optional.of("This gateway needs a credential, and none is named. Choose or add one "
                     + "in the endpoint profile.");
         }
-        if (credentials.find(endpoint.credentialRef()).isPresent()) {
+        if (credentials.contains(endpoint.credentialRef())) {
             return Optional.empty();
         }
         return Optional.of(("No credential named '%s'. Add it to the profile, or set %s in the engine's "
@@ -158,39 +188,53 @@ public class EndpointProfiles implements ProfileSchema {
                 .formatted(endpoint.credentialRef(), "UNBI_LLM_KEY_" + envName(endpoint.credentialRef())));
     }
 
-    // --- Building --------------------------------------------------------------
-
-    /** Builds an endpoint from profile values, with no id but the URL. */
+    /** Builds an unsaved endpoint using its URL as the pacing identity. */
     public static EndpointSpec build(NodeContext values) {
         return build(values, "");
     }
 
-    /**
-     * Builds an endpoint from profile values.
-     *
-     * <p>Static and pure but for the log lines, so a saved profile, an unsaved draft and a test all
-     * produce the same spec from the same values. The id is the profile's, so every node naming the
-     * same profile shares one pacer.
-     */
     public static EndpointSpec build(NodeContext values, String id) {
         var kind = ProviderProfile.resolve(values.text("gateway"));
         var baseUrl = values.text("baseUrl").trim();
+        if (baseUrl.isEmpty() && "codex".equals(kind.id())) {
+            baseUrl = "https://chatgpt.com/backend-api/codex";
+        }
         if (baseUrl.isEmpty()) {
             throw new IllegalStateException("The endpoint profile needs a base URL — there is no default for "
                     + kind.label() + ", because it differs on every machine.");
         }
-        if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
-            throw new IllegalStateException("The base URL should start with http:// or https://, got: " + baseUrl);
-        }
 
         var authRaw = values.text("auth");
-        var auth = authRaw.isBlank() || FROM_GATEWAY.equals(authRaw)
+        var auth = authRaw.isBlank() || FROM_GATEWAY.equalsIgnoreCase(authRaw.trim())
                 ? kind.authScheme()
                 : EndpointSpec.AuthScheme.of(authRaw);
         var credentialRef = NodeValues.firstNonBlank(values.text("credential"), kind.credentialRef());
 
         var headers = new LinkedHashMap<>(kind.headers());
         headers.putAll(NodeValues.stringMap(values, "headers"));
+
+        var formatRaw = values.text("apiFormat");
+        var defaultApiFormat = formatRaw.isBlank() || FROM_GATEWAY.equalsIgnoreCase(formatRaw.trim())
+                ? kind.defaultApiFormat()
+                : ApiFormat.of(formatRaw);
+        var dialectRaw = values.text("responsesDialect");
+        var responsesDialect = dialectRaw.isBlank() || FROM_GATEWAY.equalsIgnoreCase(dialectRaw.trim())
+                ? kind.responsesDialect()
+                : EndpointSpec.ResponsesDialect.of(dialectRaw);
+        var stream = NodeValues.tristate(values.text("stream"), kind.stream());
+        if (responsesDialect == EndpointSpec.ResponsesDialect.CODEX) {
+            if (defaultApiFormat != ApiFormat.RESPONSES) {
+                throw new IllegalArgumentException("The Codex Responses dialect requires the Responses API format");
+            }
+            if (!stream) {
+                throw new IllegalArgumentException("The Codex Responses dialect requires streaming");
+            }
+        }
+        var apiKeyLocation = values.text("apiKeyLocation");
+        if (apiKeyLocation.isBlank()) {
+            apiKeyLocation = "header";
+        }
+        var apiKeyName = values.text("apiKeyName").trim();
 
         var cachedRaw = values.text("cachedTokens");
         var cachedMode = cachedRaw.isBlank() || FROM_GATEWAY.equals(cachedRaw)
@@ -212,9 +256,15 @@ public class EndpointProfiles implements ProfileSchema {
                 headers,
                 rate,
                 (int) ((timeout == null || timeout <= 0 ? 120d : timeout) * 1000),
-                NodeValues.tristate(values.text("stream"), kind.stream()),
+                stream,
                 cachedMode,
-                kind.responsesPromptCache());
+                kind.responsesPromptCache(),
+                defaultApiFormat,
+                responsesDialect,
+                apiKeyLocation,
+                apiKeyName);
+        endpoint.validateApiFormat(defaultApiFormat);
+        RequestAuthorization.validateEndpoint(endpoint);
 
         values.log("%s → %s".formatted(kind.label(), endpoint.baseUrl()));
         values.log("Auth: %s%s".formatted(

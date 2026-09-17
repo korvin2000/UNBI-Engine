@@ -39,6 +39,12 @@ class ProfileStoreTest {
                     new NodeInput("retries", "Retries", Types.NUMBER, false, false,
                             Widget.NumberField.of(0, 9), 3d, null, true, null));
         }
+        @Override
+        public void validate(Map<String, Object> values) {
+            if ("bad".equals(values.get("url"))) {
+                throw new IllegalArgumentException("URL rejected");
+            }
+        }
     };
 
     private static ProfileStore storeIn(Path directory) {
@@ -59,6 +65,13 @@ class ProfileStoreTest {
         assertThat(directory.resolve("profiles/test.server/lab.json")).exists();
     }
 
+    @Test
+    void schemaValidationRejectsBeforeWriting(@TempDir Path directory) {
+        var store = storeIn(directory);
+        assertThatThrownBy(() -> store.save(profile("Rejected", Map.of("url", "bad"))))
+                .hasMessageContaining("URL rejected");
+        assertThat(directory.resolve("profiles/test.server/rejected.json")).doesNotExist();
+    }
     @Test
     @DisplayName("a second profile with the same name gets its own file rather than replacing the first")
     void sameNameDoesNotOverwrite(@TempDir Path directory) throws IOException {

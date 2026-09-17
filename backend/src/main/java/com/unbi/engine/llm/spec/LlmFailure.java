@@ -55,7 +55,7 @@ public class LlmFailure extends RuntimeException {
     }
 
     public boolean isRetryable() {
-        return RETRYABLE.contains(kind);
+        return status != 401 && status != 403 && RETRYABLE.contains(kind);
     }
 
     /** The sentence a user reads when the node goes red. */
@@ -68,6 +68,7 @@ public class LlmFailure extends RuntimeException {
         /** 429 or an explicit rate limit — the same target will work after a wait. */
         RATE_LIMIT("Rate limited"),
         TIMEOUT("Timed out"),
+        CANCELLED("Cancelled"),
         /** Socket, DNS or TLS failure before any response. */
         NETWORK("Network failure"),
         /** 5xx from the endpoint. */
@@ -121,7 +122,8 @@ public class LlmFailure extends RuntimeException {
                 || text.contains("prompt is too long")) {
             return Kind.CONTEXT_LENGTH;
         }
-        if (text.contains("content filter") || text.contains("content_policy") || text.contains("flagged")) {
+        if (text.contains("content filter") || text.contains("content_filter") || text.contains("content_policy")
+                || text.contains("refusal") || text.contains("safety") || text.contains("flagged")) {
             return Kind.CONTENT_FILTER;
         }
         if (text.contains("insufficient") || text.contains("quota") || text.contains("billing")
@@ -131,6 +133,9 @@ public class LlmFailure extends RuntimeException {
         if (text.contains("cannot be used with json") || text.contains("not supported")) {
             return Kind.UNSUPPORTED;
         }
+        if (text.contains("rate_limit")) return Kind.RATE_LIMIT;
+        if (text.contains("invalid_api_key") || text.contains("authentication_error")) return Kind.AUTH;
+        if (text.contains("server_error")) return Kind.SERVER;
         return switch (status) {
             case 429 -> Kind.RATE_LIMIT;
             case 401, 403 -> Kind.AUTH;

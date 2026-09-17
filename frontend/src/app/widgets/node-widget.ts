@@ -17,6 +17,8 @@ import { DropdownOption, WidgetSpec } from '../core/catalog/catalog.models';
 import { OptionCatalogService } from '../core/catalog/option-catalog.service';
 import { CredentialService } from '../core/credentials/credential.service';
 import { ProfileService } from '../core/profiles/profile.service';
+import { TranslatePipe } from '../core/i18n/translate.pipe';
+import { Translator } from '../core/i18n/translator';
 import { FileBrowserService } from '../shared/file-browser/file-browser.service';
 import { MinuteClock } from '../shared/minute-clock';
 import { TextEditorService } from '../shared/text-editor/text-editor.service';
@@ -97,7 +99,7 @@ interface Choice extends DropdownOption {
   selector: 'app-node-widget',
   changeDetection: ChangeDetectionStrategy.OnPush,
   // FFlowModule supplies fDragBlocker: without it, dragging a slider also drags the node.
-  imports: [Icon, FFlowModule, NgTemplateOutlet],
+  imports: [Icon, FFlowModule, NgTemplateOutlet, TranslatePipe],
   templateUrl: './node-widget.html',
   styleUrl: './node-widget.scss',
   host: {
@@ -117,6 +119,7 @@ export class NodeWidget {
   private readonly editor = inject(TextEditorService);
   private readonly profiles = inject(ProfileService);
   private readonly credentials = inject(CredentialService);
+  private readonly translator = inject(Translator);
 
   readonly spec = input.required<WidgetSpec>();
   readonly value = input<unknown>(null);
@@ -125,6 +128,8 @@ export class NodeWidget {
 
   /** The field's label, used as the title of the full-window editor this may open. */
   readonly label = input('');
+  /** Opaque host identity/revision guarding results from shell-mounted editors. */
+  readonly contextKey = input<unknown>(null);
 
   /**
    * The input's hint, drawn beside the label — but only by a readout.
@@ -216,16 +221,19 @@ export class NodeWidget {
       case 'multiselect':
         return spec.options;
       case 'profile':
-        return this.profiles.state(spec.schema)().profiles.map((profile) => ({
-          value: profile.id,
-          label: profile.name,
-          detail: profile.description || undefined,
-        }));
+        return this.profiles
+          .state(spec.schema)()
+          .profiles.map((profile) => ({
+            value: profile.id,
+            label: profile.name,
+            detail: profile.description || undefined,
+          }));
       case 'credential':
         return this.credentials.names().map((credential) => ({
           value: credential.name,
           label: credential.name,
           note: credential.source,
+          detail: this.translator.t(`credential.status.${credential.status}`),
           removable: credential.removable,
         }));
       case 'dropdown':
@@ -270,7 +278,9 @@ export class NodeWidget {
   /** Past this many rendered rows the list is not being read, it is being scrolled past. */
   private static readonly MAX_RENDERED = 150;
 
-  protected readonly searchable = computed(() => this.choices().length >= NodeWidget.SEARCHABLE_FROM);
+  protected readonly searchable = computed(
+    () => this.choices().length >= NodeWidget.SEARCHABLE_FROM,
+  );
 
   /** Every choice matching the filter, before the cap. */
   private readonly matching = computed<readonly Choice[]>(() => {
@@ -283,9 +293,7 @@ export class NodeWidget {
     );
     // A combo box filters by what is typed, and what is typed is usually the start of a name —
     // so exact and prefix matches come first, and a full match is never buried under fuzzier ones.
-    return this.comboBox()
-      ? [...hits].sort((a, b) => rank(a, needle) - rank(b, needle))
-      : hits;
+    return this.comboBox() ? [...hits].sort((a, b) => rank(a, needle) - rank(b, needle)) : hits;
   });
 
   /** The options actually drawn: what matches the filter, capped. */
@@ -349,7 +357,12 @@ export class NodeWidget {
     }
     // A comma-separated string is what a preset written by hand is likely to contain.
     return new Set(
-      typeof raw === 'string' ? raw.split(',').map((part) => part.trim()).filter(Boolean) : [],
+      typeof raw === 'string'
+        ? raw
+            .split(',')
+            .map((part) => part.trim())
+            .filter(Boolean)
+        : [],
     );
   });
 
@@ -363,7 +376,11 @@ export class NodeWidget {
     }
     // Emitted in the declared option order so the stored value does not depend on click order —
     // otherwise two identical configurations would compare as different documents.
-    this.valueChange.emit(this.choices().map((option) => option.value).filter((option) => chosen.has(option)));
+    this.valueChange.emit(
+      this.choices()
+        .map((option) => option.value)
+        .filter((option) => chosen.has(option)),
+    );
   }
 
   protected isSelected(value: string): boolean {
@@ -552,7 +569,6 @@ export class NodeWidget {
     this.listQuery.set('');
     this.fixedPanel.set(null);
     this.unwatchViewport();
-    this.cancelKey();
   }
 
   /**
@@ -732,45 +748,21 @@ export class NodeWidget {
 
   // --- Credentials ---------------------------------------------------------
 
-  protected readonly addingKey = signal(false);
-  protected readonly keyName = signal('');
-  protected readonly keySecret = signal('');
-  protected readonly credentialError = this.credentials.error;
-  protected readonly canSaveKey = computed(
-    () => /^[A-Za-z0-9][A-Za-z0-9._-]{0,60}$/.test(this.keyName().trim()) && this.keySecret().trim().length > 0,
-  );
-
-  protected startKey(): void {
-    this.keyName.set(this.text());
-    this.keySecret.set('');
-    this.addingKey.set(true);
-  }
-
-  protected cancelKey(): void {
-    this.addingKey.set(false);
-    this.keySecret.set('');
-  }
-
-  /** Sends the key once; the secret is cleared here the moment the request has left. */
-  protected saveCredential(event: Event): void {
-    event.preventDefault();
-    if (!this.canSaveKey()) {
-      return;
+  protected async manageCredential(current = this.text(), event?: Event): Promise<void> {
+    event?.stopPropagation();
+    if (this.disabled()) return;
+    const context = this.contextKey();
+    const value = this.value();
+    this.closeList();
+    const chosen = await this.credentials.edit({ current });
+    if (
+      chosen !== null &&
+      !this.destroyRef.destroyed &&
+      this.contextKey() === context &&
+      this.value() === value
+    ) {
+      this.valueChange.emit(chosen);
     }
-    const name = this.keyName().trim();
-    const secret = this.keySecret();
-    this.keySecret.set('');
-    this.credentials.add(name, secret).subscribe((accepted) => {
-      if (accepted) {
-        this.addingKey.set(false);
-        this.pickOption(name);
-      }
-    });
-  }
-
-  protected removeCredential(name: string, event: Event): void {
-    event.stopPropagation();
-    this.credentials.remove(name);
   }
 
   // --- The full-window editor ---------------------------------------------
@@ -860,7 +852,10 @@ export class NodeWidget {
       return raw.map(String).filter((entry) => entry.trim().length > 0);
     }
     return typeof raw === 'string'
-      ? raw.split(',').map((part) => part.trim()).filter(Boolean)
+      ? raw
+          .split(',')
+          .map((part) => part.trim())
+          .filter(Boolean)
       : [];
   });
 
@@ -1150,4 +1145,3 @@ function round(value: number, step: number): number {
   const decimals = (String(step).split('.')[1] ?? '').length;
   return Number(value.toFixed(decimals));
 }
-

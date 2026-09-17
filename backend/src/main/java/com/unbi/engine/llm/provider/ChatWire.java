@@ -43,6 +43,11 @@ public final class ChatWire {
 
     public static ObjectNode request(ChatCall call, boolean stream) {
         var model = call.model();
+        model.endpoint().validateApiFormat(model.apiFormat());
+        if (model.endpoint().responsesDialect()
+                == com.unbi.engine.llm.spec.EndpointSpec.ResponsesDialect.CODEX) {
+            throw new IllegalArgumentException("The Codex Responses dialect only supports Responses requests");
+        }
         var body = NODES.objectNode();
         body.put("model", model.name());
 
@@ -82,11 +87,18 @@ public final class ChatWire {
             }
             body.set("web_search_options", options);
         }
-
         reasoning(body, model.reasoning());
-        // Model extras last: the escape hatch has to be able to override anything above it, which
-        // is what makes it an escape hatch rather than a suggestion.
-        model.extraBody().forEach((key, value) -> body.set(key, JsonValue.of(value)));
+        // Extras may add gateway extensions, but cannot disagree with transport-owned fields.
+        model.extraBody().forEach((key, value) -> {
+            var replacement = JsonValue.of(value);
+            if (key.equals("model") && (!replacement.isTextual() || !model.name().equals(replacement.asString()))) {
+                throw new IllegalArgumentException("Extra Request Body cannot override the model");
+            }
+            if (key.equals("stream") && (!replacement.isBoolean() || stream != replacement.asBoolean())) {
+                throw new IllegalArgumentException("Extra Request Body cannot override streaming");
+            }
+            body.set(key, replacement);
+        });
         return body;
     }
 
@@ -245,11 +257,33 @@ public final class ChatWire {
     // --- Response -----------------------------------------------------------
 
     public static ChatResult parse(JsonNode completion, TokenUsage.CachedTokenMode mode, long latencyMillis) {
-        var choice = completion.path("choices").path(0);
+        requireObject(completion, "The Chat Completions response was not an object");
+        throwIfError(completion);
+        var choices = completion.path("choices");
+        if (!choices.isArray() || choices.isEmpty()) {
+            throw responseFormat("The Chat Completions response did not contain a choice");
+        }
+        var choice = choices.path(0);
+        var message = choice.path("message");
+        if (!message.isObject()) {
+            throw responseFormat("The Chat Completions choice did not contain a message");
+        }
+        throwIfRejectedOrUnsupported(choice);
+        var finish = FinishReason.of(choice.path("finish_reason").asString(null));
+        if (finish == FinishReason.CONTENT_FILTER) {
+            throw new LlmFailure(LlmFailure.Kind.CONTENT_FILTER, "The Chat Completions request was refused");
+        }
+        if (finish == FinishReason.TOOL_CALLS) {
+            throw new LlmFailure(
+                    LlmFailure.Kind.UNSUPPORTED,
+                    "The Chat Completions response requested a tool call, but this engine has no tool loop");
+        }
+        if (!message.path("content").isString() && !message.path("content").isArray())
+            throw responseFormat("The Chat Completions message did not contain content");
         var evidence = webSearchEvidence(completion, choice);
         return new ChatResult(
-                text(choice.path("message").path("content")),
-                FinishReason.of(choice.path("finish_reason").asString(null)),
+                text(message.path("content")),
+                finish,
                 usage(completion.path("usage"), mode),
                 completion.path("model").asString(""),
                 latencyMillis,
@@ -316,6 +350,8 @@ public final class ChatWire {
 
         /** @return the text added by this event, which is what a live view wants */
         public String accept(JsonNode event) {
+            requireObject(event, "The Chat Completions stream event was not an object");
+            throwIfError(event);
             if (event.hasNonNull("model")) {
                 model = event.path("model").asString(model);
             }
@@ -325,8 +361,10 @@ public final class ChatWire {
             event.path("citations").forEach(citations::add);
 
             var choice = event.path("choices").path(0);
-            if (choice.hasNonNull("finish_reason")) {
-                finishReason = choice.path("finish_reason").asString(finishReason);
+            throwIfRejectedOrUnsupported(choice);
+            if (choice.path("finish_reason").isString()
+                    && !choice.path("finish_reason").asString().isBlank()) {
+                finishReason = choice.path("finish_reason").asString();
             }
             choice.path("delta").path("annotations").forEach(citations::add);
             choice.path("message").path("annotations").forEach(citations::add);
@@ -347,6 +385,9 @@ public final class ChatWire {
         }
 
         public ObjectNode completion() {
+            if (finishReason == null) {
+                throw responseFormat("The Chat Completions stream ended before a finish reason");
+            }
             var node = NODES.objectNode();
             if (model != null) {
                 node.put("model", model);
@@ -421,6 +462,43 @@ public final class ChatWire {
                     LlmFailure.Kind.INVALID_REQUEST,
                     "The JSON schema could not be parsed: " + malformed.getMessage());
         }
+    }
+
+    private static void requireObject(JsonNode node, String message) {
+        if (node == null || !node.isObject()) {
+            throw responseFormat(message);
+        }
+    }
+
+    private static void throwIfError(JsonNode response) {
+        var error = response.path("type").asString("").equals("error") ? response : response.path("error");
+        if (error.isMissingNode() || error.isNull()) {
+            return;
+        }
+        var code = error.path("code").asString(error.path("type").asString(""));
+        var kind = LlmFailure.classify(400, code);
+        throw new LlmFailure(kind, "The Chat Completions request failed");
+    }
+
+    private static void throwIfRejectedOrUnsupported(JsonNode choice) {
+        var message = choice.path("message");
+        var delta = choice.path("delta");
+        if (!message.path("refusal").asString("").isEmpty() || !delta.path("refusal").asString("").isEmpty()
+                || choice.path("finish_reason").asString("").equals("content_filter")) {
+            throw new LlmFailure(LlmFailure.Kind.CONTENT_FILTER, "The Chat Completions request was refused");
+        }
+        if ((message.path("tool_calls").isArray() && !message.path("tool_calls").isEmpty())
+                || (delta.path("tool_calls").isArray() && !delta.path("tool_calls").isEmpty())
+                || message.path("function_call").isObject()
+                || delta.path("function_call").isObject()) {
+            throw new LlmFailure(
+                    LlmFailure.Kind.UNSUPPORTED,
+                    "The Chat Completions response requested a tool call, but this engine has no tool loop");
+        }
+    }
+
+    private static LlmFailure responseFormat(String message) {
+        return new LlmFailure(LlmFailure.Kind.RESPONSE_FORMAT, message);
     }
 
     private static long firstPresent(JsonNode first, JsonNode second) {

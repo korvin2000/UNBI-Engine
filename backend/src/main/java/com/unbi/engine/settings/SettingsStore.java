@@ -5,12 +5,16 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFileAttributeView;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,13 +45,15 @@ public final class SettingsStore {
      * other stores create under it. Listed rather than discovered, because the home directory also
      * holds {@code settings.json} and the workflow library, and neither of those is data.
      */
-    public static final List<String> DATA_ENTRIES = List.of("credentials.properties", "profiles", "presets");
+    public static final List<String> DATA_ENTRIES =
+            List.of("credentials.properties", "credentials", "profiles", "presets");
 
     private static final Logger log = LoggerFactory.getLogger(SettingsStore.class);
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final EngineHome home;
     private final Object lock = new Object();
+    private final ReentrantReadWriteLock dataLock = new ReentrantReadWriteLock();
     private volatile Loaded loaded;
 
     public SettingsStore(EngineHome home) {
@@ -60,6 +66,14 @@ public final class SettingsStore {
 
     /** What a relocation did, for the sentence the editor shows afterwards. */
     public record Relocation(Settings settings, Path from, Path to, int filesCopied, int filesSkipped) {}
+
+    /** A data operation is active, so relocating its root would capture an inconsistent snapshot. */
+    public static final class DataBusyException extends IOException {
+        private static final long serialVersionUID = 1L;
+        public DataBusyException() {
+            super("Data relocation is busy; finish or cancel authentication and try again.");
+        }
+    }
 
     public Settings current() {
         return loaded.settings();
@@ -81,6 +95,11 @@ public final class SettingsStore {
     public Path dataRoot() {
         var configured = current().dataDirectory();
         return configured.isEmpty() ? defaultDataRoot() : Path.of(configured);
+    }
+
+    /** Shared with {@link com.unbi.engine.config.DataDirectory} for active data operations. */
+    public Lock dataReadLock() {
+        return dataLock.readLock();
     }
 
     public Path workflowsRoot() {
@@ -121,28 +140,41 @@ public final class SettingsStore {
      * @param directory the new location, or blank for the default
      */
     public Relocation relocate(Target target, String directory, boolean copyExisting) throws IOException {
-        synchronized (lock) {
-            var from = root(target);
-            var what = target == Target.DATA ? "data directory" : "workflows directory";
-            var configured = Settings.normalisePath(directory, what);
-            var to = configured.isEmpty()
-                    ? (target == Target.DATA ? defaultDataRoot() : defaultWorkflowsRoot())
-                    : Path.of(configured);
-            if (Files.exists(to) && !Files.isDirectory(to)) {
-                throw new IllegalArgumentException(to + " is a file, not a directory.");
+        Lock dataWriteLock = null;
+        if (target == Target.DATA) {
+            dataWriteLock = dataLock.writeLock();
+            if (!dataWriteLock.tryLock()) {
+                throw new DataBusyException();
             }
+        }
+        try {
+            synchronized (lock) {
+                var from = root(target);
+                var what = target == Target.DATA ? "data directory" : "workflows directory";
+                var configured = Settings.normalisePath(directory, what);
+                var to = configured.isEmpty()
+                        ? (target == Target.DATA ? defaultDataRoot() : defaultWorkflowsRoot())
+                        : Path.of(configured);
+                if (Files.exists(to) && !Files.isDirectory(to)) {
+                    throw new IllegalArgumentException(to + " is a file, not a directory.");
+                }
 
-            var copied = new int[] {0, 0};
-            if (copyExisting && !from.equals(to)) {
-                copied = copy(sources(target, from), from, to);
+                var copied = new int[] {0, 0};
+                if (copyExisting && !from.equals(to)) {
+                    copied = copy(sources(target, from), from, to);
+                }
+                Files.createDirectories(to);
+
+                var updated = target == Target.DATA
+                        ? current().withDataDirectory(configured)
+                        : current().withWorkflowsDirectory(configured);
+                write(updated);
+                return new Relocation(updated, from, to, copied[0], copied[1]);
             }
-            Files.createDirectories(to);
-
-            var updated = target == Target.DATA
-                    ? current().withDataDirectory(configured)
-                    : current().withWorkflowsDirectory(configured);
-            write(updated);
-            return new Relocation(updated, from, to, copied[0], copied[1]);
+        } finally {
+            if (dataWriteLock != null) {
+                dataWriteLock.unlock();
+            }
         }
     }
 
@@ -151,7 +183,10 @@ public final class SettingsStore {
         if (target == Target.WORKFLOWS) {
             return Files.isDirectory(from) ? List.of(from) : List.of();
         }
-        return DATA_ENTRIES.stream().map(from::resolve).filter(Files::exists).toList();
+        return DATA_ENTRIES.stream()
+                .map(from::resolve)
+                .filter(path -> Files.exists(path) || Files.isSymbolicLink(path))
+                .toList();
     }
 
     /** @return files copied, then files skipped because the destination already had them */
@@ -164,24 +199,56 @@ public final class SettingsStore {
         int copied = 0;
         int skipped = 0;
         for (var source : sources) {
+            var secretSource = source.equals(from.resolve("credentials"))
+                    || source.equals(from.resolve("credentials.properties"));
             try (Stream<Path> walk = Files.walk(source)) {
                 for (var path : (Iterable<Path>) walk::iterator) {
+                    if (secretSource && Files.isSymbolicLink(path)) {
+                        throw new IOException("Credential paths must not contain symbolic links");
+                    }
                     var destination = to.resolve(from.relativize(path));
-                    if (Files.isDirectory(path)) {
+                    if (secretSource) {
+                        rejectSymlinks(destination);
+                    }
+                    if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+                        var existed = Files.exists(destination, LinkOption.NOFOLLOW_LINKS);
                         Files.createDirectories(destination);
+                        if (!existed) {
+                            copyPermissions(path, destination);
+                        }
                         continue;
                     }
-                    if (Files.exists(destination)) {
+                    if (Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) {
                         skipped++;
                         continue;
                     }
                     Files.createDirectories(destination.getParent());
                     Files.copy(path, destination);
+                    copyPermissions(path, destination);
                     copied++;
                 }
             }
         }
         return new int[] {copied, skipped};
+    }
+
+    private static void rejectSymlinks(Path path) throws IOException {
+        for (var current = path.toAbsolutePath().normalize();
+                current != null;
+                current = current.getParent()) {
+            if (Files.isSymbolicLink(current)) {
+                throw new IOException("Credential paths must not contain symbolic links");
+            }
+        }
+    }
+
+    private static void copyPermissions(Path source, Path destination) throws IOException {
+        var sourceView = Files.getFileAttributeView(source, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        var destinationView =
+                Files.getFileAttributeView(destination, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        if (sourceView != null && destinationView != null) {
+            destinationView.setPermissions(sourceView.readAttributes().permissions());
+        }
     }
 
     private Loaded read() {

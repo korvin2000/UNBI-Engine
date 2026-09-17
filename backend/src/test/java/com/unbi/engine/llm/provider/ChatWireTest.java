@@ -438,18 +438,24 @@ class ChatWireTest {
 
         @Test
         void readsDataLinesAndIgnoresEverythingElse() {
-            assertThat(SseReader.dataPayload("data: {\"a\":1}")).isEqualTo("{\"a\":1}");
-            assertThat(SseReader.dataPayload("data:{\"a\":1}")).isEqualTo("{\"a\":1}");
-            assertThat(SseReader.dataPayload(": keep-alive")).isNull();
-            assertThat(SseReader.dataPayload("event: message")).isNull();
-            assertThat(SseReader.dataPayload("")).isNull();
-            assertThat(SseReader.dataPayload(null)).isNull();
+            var reader = new SseReader();
+            assertThat(reader.accept("data: {\"a\":1}")).isNull();
+            assertThat(reader.accept("")).satisfies(event -> {
+                assertThat(event).isNotNull();
+                assertThat(event.type()).isEmpty();
+                assertThat(event.data()).isEqualTo("{\"a\":1}");
+            });
+            assertThat(reader.accept(": keep-alive")).isNull();
+            assertThat(reader.accept("event: message")).isNull();
+            assertThat(reader.accept("")).isNull();
         }
 
         @Test
         @DisplayName("only one space after the colon is eaten; the rest could be payload")
         void keepsSignificantWhitespace() {
-            assertThat(SseReader.dataPayload("data:  two")).isEqualTo(" two");
+            var reader = new SseReader();
+            assertThat(reader.accept("data:  two")).isNull();
+            assertThat(reader.accept("")).satisfies(event -> assertThat(event.data()).isEqualTo(" two"));
         }
     }
 }

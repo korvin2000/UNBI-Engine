@@ -6,7 +6,12 @@
       <app-icon name="settings" [size]="15" />
       <h2>{{ 'settings.title' | t }}</h2>
       <span class="dialog__sub">{{ state()?.file || ('settings.subtitle' | t) }}</span>
-      <button class="dialog__close" type="button" [attr.aria-label]="'common.close' | t" (click)="close()">
+      <button
+        class="dialog__close"
+        type="button"
+        [attr.aria-label]="'common.close' | t"
+        (click)="close()"
+      >
         <app-icon name="close" [size]="14" />
       </button>
     </header>
@@ -38,7 +43,9 @@
             <h3 class="content__title">{{ 'settings.page.general' | t }}</h3>
 
             @if (state()?.error) {
-              <p class="notice notice--warn">{{ 'settings.general.fileError' | t: { reason: state()!.error } }}</p>
+              <p class="notice notice--warn">
+                {{ 'settings.general.fileError' | t: { reason: state()!.error } }}
+              </p>
             }
 
             <div class="field-row field-row--narrow">
@@ -53,7 +60,11 @@
             </div>
 
             @if (generalNotice(); as notice) {
-              <p class="notice" [class.notice--ok]="notice.kind === 'ok'" [class.notice--error]="notice.kind === 'error'">
+              <p
+                class="notice"
+                [class.notice--ok]="notice.kind === 'ok'"
+                [class.notice--error]="notice.kind === 'error'"
+              >
                 {{ notice.text }}
               </p>
             }
@@ -64,7 +75,11 @@
             <h3 class="content__title">{{ 'settings.page.storage' | t }}</h3>
 
             @if (storageNotice(); as notice) {
-              <p class="notice" [class.notice--ok]="notice.kind === 'ok'" [class.notice--error]="notice.kind === 'error'">
+              <p
+                class="notice"
+                [class.notice--ok]="notice.kind === 'ok'"
+                [class.notice--error]="notice.kind === 'error'"
+              >
                 {{ notice.text }}
               </p>
             }
@@ -78,7 +93,9 @@
                   <app-icon name="folder" [size]="13" />
                   <code>{{ location.effective }}</code>
                   @if (!location.configured) {
-                    <span class="chip" [attr.title]="'settings.storage.usingDefault' | t">{{ 'common.default' | t }}</span>
+                    <span class="chip" [attr.title]="'settings.storage.usingDefault' | t">{{
+                      'common.default' | t
+                    }}</span>
                   }
                 </div>
 
@@ -90,7 +107,9 @@
                       @if (line.name !== 'favorites/') {
                         <span class="tree__count">{{ line.countKey | n: line.count }}</span>
                       } @else {
-                        <span class="tree__count">{{ 'settings.storage.favoritesFolder' | t }}</span>
+                        <span class="tree__count">{{
+                          'settings.storage.favoritesFolder' | t
+                        }}</span>
                       }
                     </li>
                   }
@@ -103,15 +122,31 @@
                       <code>{{ pending()!.directory || ('common.default' | t) }}</code>
                     </p>
                     <label class="check">
-                      <input type="checkbox" [checked]="copyExisting()" (change)="setCopyExisting($event)" />
-                      <span class="check__box"><app-icon name="check" [size]="10" [weight]="3" /></span>
+                      <input
+                        type="checkbox"
+                        [checked]="copyExisting()"
+                        (change)="setCopyExisting($event)"
+                      />
+                      <span class="check__box"
+                        ><app-icon name="check" [size]="10" [weight]="3"
+                      /></span>
                       <span class="check__text">{{ 'settings.storage.copyExisting' | t }}</span>
                     </label>
                     <div class="pending__actions">
-                      <button class="button button--primary" type="button" [disabled]="relocating()" (click)="applyRelocation()">
+                      <button
+                        class="button button--primary"
+                        type="button"
+                        [disabled]="relocating()"
+                        (click)="applyRelocation()"
+                      >
                         {{ 'common.apply' | t }}
                       </button>
-                      <button class="button" type="button" [disabled]="relocating()" (click)="cancelRelocation()">
+                      <button
+                        class="button"
+                        type="button"
+                        [disabled]="relocating()"
+                        (click)="cancelRelocation()"
+                      >
                         {{ 'common.cancel' | t }}
                       </button>
                     </div>
@@ -123,7 +158,11 @@
                       {{ 'common.change' | t }}
                     </button>
                     @if (location.configured) {
-                      <button class="button button--quiet" type="button" (click)="useDefault(location)">
+                      <button
+                        class="button button--quiet"
+                        type="button"
+                        (click)="useDefault(location)"
+                      >
                         {{ 'settings.storage.useDefault' | t }}
                       </button>
                     }
@@ -144,7 +183,9 @@
                   <app-icon class="row__icon" name="plug" [size]="14" />
                   <span class="row__main">
                     <span class="row__name">{{ schema.label }}</span>
-                    <span class="row__detail">{{ 'settings.profiles.count' | n: schema.count }}</span>
+                    <span class="row__detail">{{
+                      'settings.profiles.count' | n: schema.count
+                    }}</span>
                   </span>
                   <button class="button" type="button" (click)="manage(schema)">
                     <app-icon name="edit" [size]="12" />
@@ -154,11 +195,21 @@
               }
             </ul>
 
-            <h3 class="content__title content__title--later">{{ 'settings.credentials.title' | t }}</h3>
+            <h3 class="content__title content__title--later">
+              {{ 'settings.credentials.title' | t }}
+            </h3>
             <p class="content__hint">{{ 'settings.credentials.hint' | t }}</p>
+            <p class="content__hint">{{ 'credential.backupHint' | t }}</p>
+            @if (keyError()) {
+              <p class="notice notice--error">{{ keyError() }}</p>
+            }
 
             @if (keyNotice(); as notice) {
-              <p class="notice" [class.notice--ok]="notice.kind === 'ok'" [class.notice--error]="notice.kind === 'error'">
+              <p
+                class="notice"
+                [class.notice--ok]="notice.kind === 'ok'"
+                [class.notice--error]="notice.kind === 'error'"
+              >
                 {{ notice.text }}
               </p>
             }
@@ -169,15 +220,32 @@
                   <app-icon class="row__icon" name="key" [size]="14" />
                   <span class="row__main">
                     <span class="row__name">{{ key.name }}</span>
-                    <span class="row__detail">{{ 'settings.credentials.source' | t: { source: key.source } }}</span>
+                    <span class="row__detail">{{
+                      'settings.credentials.source' | t: { source: key.source }
+                    }}</span>
+                    <span class="row__detail"
+                      >{{ credentialStatus(key) }} ·
+                      {{
+                        (key.renewable ? 'credential.renewable' : 'credential.manualRenewal') | t
+                      }}</span
+                    >
                   </span>
+                  <button class="button" type="button" (click)="manageCredential(key.name)">
+                    {{ 'credential.manage' | t }}
+                  </button>
                   @if (key.removable) {
                     @if (removingKey() === key.name) {
-                      <button class="button button--danger" type="button" (click)="removeKey(key.name)">
+                      <button
+                        class="button button--danger"
+                        type="button"
+                        (click)="removeKey(key.name)"
+                      >
                         <app-icon name="trash" [size]="12" />
                         {{ 'settings.credentials.removeForGood' | t }}
                       </button>
-                      <button class="button" type="button" (click)="cancelRemoveKey()">{{ 'common.keep' | t }}</button>
+                      <button class="button" type="button" (click)="cancelRemoveKey()">
+                        {{ 'common.keep' | t }}
+                      </button>
                     } @else {
                       <button
                         class="button button--quiet"
@@ -195,33 +263,16 @@
               }
             </ul>
 
-            <div class="add-key">
-              <label class="field-row">
-                <span class="field-row__label">{{ 'settings.credentials.name' | t }}</span>
-                <input class="field" type="text" placeholder="openrouter" [value]="newKeyName()" (input)="setNewKeyName($event)" />
-              </label>
-              <label class="field-row add-key__value">
-                <span class="field-row__label">{{ 'settings.credentials.value' | t }}</span>
-                <input
-                  class="field"
-                  type="password"
-                  autocomplete="off"
-                  placeholder="sk-…"
-                  [value]="newKeyValue()"
-                  (input)="setNewKeyValue($event)"
-                  (keydown.enter)="addKey()"
-                />
-              </label>
-              <button class="button add-key__button" type="button" [disabled]="!canAddKey()" (click)="addKey()">
-                <app-icon name="plus" [size]="12" />
-                {{ 'settings.credentials.add' | t }}
-              </button>
-            </div>
+            <button class="button" type="button" (click)="manageCredential()">
+              <app-icon name="plus" [size]="12" />
+              {{ 'credential.add' | t }}
+            </button>
           }
 
           <!-- ------------------------------------------------------------ Backup & migration -->
           @case ('backup') {
             <h3 class="content__title">{{ 'settings.backup.exportTitle' | t }}</h3>
+            <p class="content__hint">{{ 'credential.backupHint' | t }}</p>
             <p class="content__hint">{{ 'settings.backup.exportHint' | t }}</p>
 
             <ul class="checklist">
@@ -234,13 +285,18 @@
                       [disabled]="section.count === 0"
                       (change)="toggleSection(section.id)"
                     />
-                    <span class="check__box"><app-icon name="check" [size]="10" [weight]="3" /></span>
+                    <span class="check__box"
+                      ><app-icon name="check" [size]="10" [weight]="3"
+                    /></span>
                     <span class="check__text">
                       <span>
                         {{ sectionLabel(section.id, section.label) }}
                         <span class="count">{{ 'settings.backup.items' | n: section.count }}</span>
                         @if (section.sensitive) {
-                          <span class="chip chip--warn"><app-icon name="lock" [size]="9" /> {{ 'settings.sections.sensitive' | t }}</span>
+                          <span class="chip chip--warn"
+                            ><app-icon name="lock" [size]="9" />
+                            {{ 'settings.sections.sensitive' | t }}</span
+                          >
                         }
                       </span>
                       <span class="check__detail">{{ section.description }}</span>
@@ -260,11 +316,23 @@
               <div class="passwords">
                 <label class="field-row">
                   <span class="field-row__label">{{ 'settings.backup.password' | t }}</span>
-                  <input class="field" type="password" autocomplete="new-password" [value]="password()" (input)="setPassword($event)" />
+                  <input
+                    class="field"
+                    type="password"
+                    autocomplete="new-password"
+                    [value]="password()"
+                    (input)="setPassword($event)"
+                  />
                 </label>
                 <label class="field-row">
                   <span class="field-row__label">{{ 'settings.backup.passwordAgain' | t }}</span>
-                  <input class="field" type="password" autocomplete="new-password" [value]="passwordAgain()" (input)="setPasswordAgain($event)" />
+                  <input
+                    class="field"
+                    type="password"
+                    autocomplete="new-password"
+                    [value]="passwordAgain()"
+                    (input)="setPasswordAgain($event)"
+                  />
                 </label>
               </div>
               @if (passwordProblem(); as problem) {
@@ -280,25 +348,43 @@
             }
 
             <div class="actions">
-              <button class="button button--primary" type="button" [disabled]="!canExport()" (click)="exportBundle()">
+              <button
+                class="button button--primary"
+                type="button"
+                [disabled]="!canExport()"
+                (click)="exportBundle()"
+              >
                 <app-icon name="save" [size]="12" />
                 {{ (exporting() ? 'settings.backup.exporting' : 'settings.backup.export') | t }}
               </button>
               @if (exportNotice(); as notice) {
-                <span class="actions__status" [class.is-ok]="notice.kind === 'ok'" [class.is-error]="notice.kind === 'error'">
+                <span
+                  class="actions__status"
+                  [class.is-ok]="notice.kind === 'ok'"
+                  [class.is-error]="notice.kind === 'error'"
+                >
                   {{ notice.text }}
                 </span>
               }
             </div>
 
-            <h3 class="content__title content__title--later">{{ 'settings.backup.importTitle' | t }}</h3>
+            <h3 class="content__title content__title--later">
+              {{ 'settings.backup.importTitle' | t }}
+            </h3>
             <p class="content__hint">{{ 'settings.backup.importHint' | t }}</p>
 
             <div class="actions">
               <label class="button">
                 <app-icon name="open" [size]="12" />
-                {{ (inspecting() ? 'settings.backup.inspecting' : 'settings.backup.chooseFile') | t }}
-                <input class="hidden-input" type="file" accept=".ucfg" (change)="chooseFile($event)" />
+                {{
+                  (inspecting() ? 'settings.backup.inspecting' : 'settings.backup.chooseFile') | t
+                }}
+                <input
+                  class="hidden-input"
+                  type="file"
+                  accept=".ucfg"
+                  (change)="chooseFile($event)"
+                />
               </label>
               @if (importFile(); as file) {
                 <span class="actions__status">{{ file.name }}</span>
@@ -306,7 +392,11 @@
             </div>
 
             @if (importNotice(); as notice) {
-              <p class="notice" [class.notice--ok]="notice.kind === 'ok'" [class.notice--error]="notice.kind === 'error'">
+              <p
+                class="notice"
+                [class.notice--ok]="notice.kind === 'ok'"
+                [class.notice--error]="notice.kind === 'error'"
+              >
                 {{ notice.text }}
               </p>
             }
@@ -317,18 +407,25 @@
               <ul class="checklist">
                 @for (section of found.sections; track section.id) {
                   <li>
-                    <label class="check" [class.is-disabled]="!section.known || section.count === 0">
+                    <label
+                      class="check"
+                      [class.is-disabled]="!section.known || section.count === 0"
+                    >
                       <input
                         type="checkbox"
                         [checked]="importChosen().has(section.id)"
                         [disabled]="!section.known || section.count === 0"
                         (change)="toggleImportSection(section.id)"
                       />
-                      <span class="check__box"><app-icon name="check" [size]="10" [weight]="3" /></span>
+                      <span class="check__box"
+                        ><app-icon name="check" [size]="10" [weight]="3"
+                      /></span>
                       <span class="check__text">
                         <span>
                           {{ sectionLabel(section.id, section.label || section.id) }}
-                          <span class="count">{{ 'settings.backup.items' | n: section.count }}</span>
+                          <span class="count">{{
+                            'settings.backup.items' | n: section.count
+                          }}</span>
                           @if (!section.known) {
                             <span class="chip">{{ 'settings.backup.unknownSection' | t }}</span>
                           }
@@ -341,7 +438,9 @@
 
               @if (found.encrypted) {
                 <label class="field-row field-row--narrow">
-                  <span class="field-row__label"><app-icon name="lock" [size]="11" /> {{ 'settings.backup.password' | t }}</span>
+                  <span class="field-row__label"
+                    ><app-icon name="lock" [size]="11" /> {{ 'settings.backup.password' | t }}</span
+                  >
                   <input
                     class="field"
                     type="password"
@@ -358,7 +457,13 @@
                 <div class="radios" role="radiogroup">
                   @for (option of conflictOptions; track option.value) {
                     <label class="radio" [class.is-on]="conflicts() === option.value">
-                      <input type="radio" name="conflicts" [value]="option.value" [checked]="conflicts() === option.value" (change)="setConflicts(option.value)" />
+                      <input
+                        type="radio"
+                        name="conflicts"
+                        [value]="option.value"
+                        [checked]="conflicts() === option.value"
+                        (change)="setConflicts(option.value)"
+                      />
                       <span class="radio__dot"></span>
                       <span>{{ option.key | t }}</span>
                     </label>
@@ -367,7 +472,12 @@
               </div>
 
               <div class="actions">
-                <button class="button button--primary" type="button" [disabled]="!canImport()" (click)="importBundle()">
+                <button
+                  class="button button--primary"
+                  type="button"
+                  [disabled]="!canImport()"
+                  (click)="importBundle()"
+                >
                   <app-icon name="open" [size]="12" />
                   {{ (importing() ? 'settings.backup.importing' : 'settings.backup.import') | t }}
                 </button>
@@ -380,8 +490,12 @@
                   @for (section of done.sections; track section.id) {
                     <tr>
                       <th>{{ sectionLabel(section.id, section.id) }}</th>
-                      <td>{{ 'settings.backup.reportImported' | t: { count: section.imported } }}</td>
-                      <td>{{ 'settings.backup.reportReplaced' | t: { count: section.replaced } }}</td>
+                      <td>
+                        {{ 'settings.backup.reportImported' | t: { count: section.imported } }}
+                      </td>
+                      <td>
+                        {{ 'settings.backup.reportReplaced' | t: { count: section.replaced } }}
+                      </td>
                       <td>{{ 'settings.backup.reportSkipped' | t: { count: section.skipped } }}</td>
                       <td class="report__problems" [class.is-bad]="section.problems.length > 0">
                         {{ 'settings.backup.reportProblems' | n: section.problems.length }}
@@ -409,7 +523,9 @@
               <dt>{{ 'settings.about.engine' | t }}</dt>
               <dd>{{ state()?.engine?.version || '—' }}</dd>
               <dt>{{ 'settings.about.home' | t }}</dt>
-              <dd><code>{{ state()?.file || '—' }}</code></dd>
+              <dd>
+                <code>{{ state()?.file || '—' }}</code>
+              </dd>
               <dt>{{ 'settings.about.java' | t }}</dt>
               <dd>{{ state()?.engine?.java || '—' }}</dd>
               <dt>{{ 'settings.about.os' | t }}</dt>

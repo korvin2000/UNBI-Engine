@@ -3,12 +3,21 @@ package com.unbi.engine.llm.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.unbi.engine.llm.Fixtures;
+import com.unbi.engine.llm.spec.EndpointSpec;
 import com.unbi.engine.llm.spec.LlmFailure;
+import java.net.URI;
+import java.time.Duration;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.SequencedSet;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -192,6 +201,86 @@ class CredentialStoreTest {
                     new EnvironmentCredentials(Map.of("UNBI_LLM_KEY_ONE", "a"))));
             assertThat(store.find("")).isEmpty();
             assertThat(store.find(null)).isEmpty();
+        }
+    }
+
+    @Nested
+    class Sessions {
+
+        @Test
+        void unauthenticatedSessionsResolveNull() {
+            var endpoint = new EndpointSpec("none", "custom", "https://gateway.test/v1", EndpointSpec.AuthScheme.NONE, "", Map.of(), com.unbi.engine.llm.spec.RatePolicy.UNLIMITED, 1_000, false, com.unbi.engine.llm.spec.TokenUsage.CachedTokenMode.INCLUDED, false, com.unbi.engine.llm.spec.ApiFormat.CHAT_COMPLETIONS, EndpointSpec.ResponsesDialect.STANDARD, "header", "");
+            var session = new CredentialStore(List.of()).session(endpoint, Duration.ofSeconds(1), () -> false);
+            assertThat(session.resolve()).isNull();
+        }
+
+        @Test
+        void recoveryRefreshesOnceAndTheNextDispatchReadsThePublishedCredential() {
+            var source = new RenewableSource(true);
+            var session = new CredentialStore(List.of(source))
+                    .session(Fixtures.endpoint(), Duration.ofSeconds(1), () -> false);
+            var old = session.resolve();
+            source.token = Credential.bearer("key", "new-token");
+
+            var rejected = new LlmFailure(
+                    LlmFailure.Kind.AUTH, "unauthorized", Fixtures.endpoint().baseUrl(), 401, -1, null);
+            assertThat(session.recover(rejected, old)).isTrue();
+            assertThat(session.resolve().token()).isEqualTo("new-token");
+            assertThat(source.refreshes.get()).isEqualTo(1);
+            assertThat(session.recover(rejected, old)).isFalse();
+            assertThat(source.refreshes.get()).isEqualTo(1);
+        }
+
+        @Test
+        void anOwnedNameDoesNotFallThroughWhenThatSourceIsDisconnected() {
+            var disconnected = new RenewableSource(false);
+            var fallback = new RenewableSource(true);
+            var session = new CredentialStore(List.of(disconnected, fallback))
+                    .session(Fixtures.endpoint(), Duration.ofSeconds(1), () -> false);
+
+            assertThatThrownBy(session::resolve)
+                    .isInstanceOfSatisfying(LlmFailure.class,
+                            failure -> assertThat(failure.kind()).isEqualTo(LlmFailure.Kind.AUTH));
+            assertThat(fallback.resolves.get()).isZero();
+        }
+    }
+
+    private static final class RenewableSource implements CredentialSource {
+        private final boolean available;
+        private final AtomicInteger resolves = new AtomicInteger();
+        private final AtomicInteger refreshes = new AtomicInteger();
+        private volatile Credential token = Credential.bearer("key", "old-token");
+
+        private RenewableSource(boolean available) {
+            this.available = available;
+        }
+
+        @Override
+        public String id() {
+            return "renewable";
+        }
+
+        @Override
+        public Optional<Credential> find(String ref) {
+            return available && "key".equals(ref) ? Optional.of(token) : Optional.empty();
+        }
+
+        @Override
+        public Optional<Credential> resolve(String ref, URI resource, Duration timeout, BooleanSupplier cancelled) {
+            resolves.incrementAndGet();
+            return find(ref);
+        }
+
+        @Override
+        public Optional<Credential> refresh(
+                String ref, Credential rejected, URI resource, Duration timeout, BooleanSupplier cancelled) {
+            refreshes.incrementAndGet();
+            return find(ref);
+        }
+
+        @Override
+        public SequencedSet<String> names() {
+            return new LinkedHashSet<>(List.of("key"));
         }
     }
 

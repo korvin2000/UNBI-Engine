@@ -31,6 +31,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.stereotype.Component;
 
@@ -276,18 +278,27 @@ public class LlmRequestNode implements NodeDefinition, NodeProbe {
         var gate = new Semaphore(Math.max(1, Math.min(MAX_PARALLEL, context.integer("parallel"))));
         var completed = new AtomicInteger();
         var continueOnError = context.flag("continueOnError");
+        var firstFailure = new java.util.concurrent.atomic.AtomicReference<RuntimeException>();
         var futures = new ArrayList<Future<Outcome>>(requests.size());
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var abort = false;
+        try {
             for (var request : requests) {
                 futures.add(executor.submit(() -> {
                     if (context.isCancelled()) {
                         return Outcome.failed("cancelled");
                     }
-                    gate.acquire();
+                    acquireGate(gate, context);
                     try {
+                        // Cancellation may arrive between acquiring the local gate and starting the
+                        // provider call; do not spend a dispatch slot in that window.
+                        context.checkCancelled();
                         var call = callFor(context, model, request, sampling);
                         return ask(context, call, policy, cancellationOnly(context),
                                 request.label(requests.size()), continueOnError);
+                    } catch (RuntimeException failed) {
+                        firstFailure.compareAndSet(null, failed);
+                        throw failed;
                     } finally {
                         gate.release();
                         var done = completed.incrementAndGet();
@@ -297,17 +308,47 @@ public class LlmRequestNode implements NodeDefinition, NodeProbe {
             }
             var outcomes = new ArrayList<Outcome>(requests.size());
             for (var future : futures) {
-                try {
-                    outcomes.add(future.get());
-                } catch (ExecutionException failed) {
-                    // The worker converts every expected failure into an Outcome, so what escapes
-                    // is a request the user chose not to survive, or a bug worth seeing as itself.
-                    throw failed.getCause() instanceof RuntimeException runtime
-                            ? runtime
-                            : new IllegalStateException("A request failed unexpectedly: " + failed.getCause(), failed.getCause());
+                while (true) {
+                    context.checkCancelled();
+                    var failed = firstFailure.get();
+                    if (!continueOnError && failed != null) {
+                        throw failed;
+                    }
+                    try {
+                        outcomes.add(future.get(100, TimeUnit.MILLISECONDS));
+                        break;
+                    } catch (TimeoutException waiting) {
+                        // Polling keeps cancellation/fail-fast responsive instead of waiting for a
+                        // provider timeout on an unrelated batch item.
+                    } catch (ExecutionException executionFailure) {
+                        abort = true;
+                        // Tolerated failures are Outcomes; an escaping failure aborts the batch.
+                        throw executionFailure.getCause() instanceof RuntimeException runtime
+                                ? runtime
+                                : new IllegalStateException("A request failed unexpectedly", executionFailure.getCause());
+                    }
                 }
             }
             return outcomes;
+        } catch (InterruptedException | RuntimeException | Error failure) {
+            abort = true;
+            throw failure;
+        } finally {
+            if (abort || context.isCancelled()) {
+                futures.forEach(future -> future.cancel(true));
+                executor.shutdownNow();
+            } else {
+                executor.shutdown();
+            }
+        }
+    }
+
+    private static void acquireGate(Semaphore gate, NodeContext context) throws InterruptedException {
+        while (true) {
+            context.checkCancelled();
+            if (gate.tryAcquire(100, TimeUnit.MILLISECONDS)) {
+                return;
+            }
         }
     }
 

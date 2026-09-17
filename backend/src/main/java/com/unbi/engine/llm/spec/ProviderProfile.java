@@ -43,6 +43,7 @@ public record ProviderProfile(
         TokenUsage.CachedTokenMode cachedTokenMode,
         boolean responsesPromptCache,
         ApiFormat defaultApiFormat,
+        EndpointSpec.ResponsesDialect responsesDialect,
         RatePolicy rate,
         String notes,
         String probePath,
@@ -53,6 +54,7 @@ public record ProviderProfile(
         credentialRef = credentialRef == null ? "" : credentialRef;
         headers = Map.copyOf(headers == null ? Map.of() : headers);
         rate = rate == null ? RatePolicy.UNLIMITED : rate;
+        responsesDialect = responsesDialect == null ? EndpointSpec.ResponsesDialect.STANDARD : responsesDialect;
         notes = notes == null ? "" : notes;
         probePath = probePath == null || probePath.isBlank() ? "/models" : probePath.trim();
         creditsPath = creditsPath == null ? "" : creditsPath.trim();
@@ -77,6 +79,7 @@ public record ProviderProfile(
                         TokenUsage.CachedTokenMode.INCLUDED,
                         false,
                         ApiFormat.CHAT_COMPLETIONS,
+                        EndpointSpec.ResponsesDialect.STANDARD,
                         new RatePolicy(0, 0, 4),
                         "One model id can be served by many hosts with different sampler support. "
                                 + "Set provider order and Require parameter support on the model node "
@@ -94,6 +97,7 @@ public record ProviderProfile(
                         TokenUsage.CachedTokenMode.INCLUDED,
                         false,
                         ApiFormat.CHAT_COMPLETIONS,
+                        EndpointSpec.ResponsesDialect.STANDARD,
                         new RatePolicy(0, 0, 1),
                         "A single-slot server is one lane no matter what this says, so max "
                                 + "concurrent stays at 1 unless the server was started with more "
@@ -109,6 +113,7 @@ public record ProviderProfile(
                         TokenUsage.CachedTokenMode.ADDITIONAL,
                         false,
                         ApiFormat.CHAT_COMPLETIONS,
+                        EndpointSpec.ResponsesDialect.STANDARD,
                         new RatePolicy(60, 50, 3),
                         "Streaming is on for a reason: two overlapping buffered requests have been "
                                 + "measured returning each other's completions. A models listing is "
@@ -125,6 +130,7 @@ public record ProviderProfile(
                         TokenUsage.CachedTokenMode.INCLUDED,
                         true,
                         ApiFormat.RESPONSES,
+                        EndpointSpec.ResponsesDialect.STANDARD,
                         RatePolicy.UNLIMITED,
                         "Reasoning models want max_completion_tokens rather than max_tokens; set it "
                                 + "on the model node.",
@@ -139,9 +145,10 @@ public record ProviderProfile(
                         TokenUsage.CachedTokenMode.INCLUDED,
                         false,
                         ApiFormat.RESPONSES,
+                        EndpointSpec.ResponsesDialect.CODEX,
                         new RatePolicy(0, 200, 1),
-                        "Uses the credentials the codex CLI already wrote; run `codex login` if the "
-                                + "token has expired. Responses only.",
+                        "Use Connect in UNBI for a native managed ChatGPT login and renewal. External "
+                                + "Codex CLI credentials remain read-only. Requires Codex Responses.",
                         "/models", "", ""),
                 new ProviderProfile(
                         "custom",
@@ -153,6 +160,7 @@ public record ProviderProfile(
                         TokenUsage.CachedTokenMode.INCLUDED,
                         false,
                         ApiFormat.CHAT_COMPLETIONS,
+                        EndpointSpec.ResponsesDialect.STANDARD,
                         RatePolicy.UNLIMITED,
                         "Anything that speaks the OpenAI shape. Fill in the fields the gateway needs.",
                         "/models", "", ""));

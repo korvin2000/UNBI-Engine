@@ -1,6 +1,7 @@
 package com.unbi.engine.llm.provider;
 
 import com.unbi.engine.llm.auth.Credential;
+import com.unbi.engine.llm.auth.RequestAuthorization;
 import com.unbi.engine.llm.spec.ApiFormat;
 import com.unbi.engine.llm.spec.ChatCall;
 import com.unbi.engine.llm.spec.ChatResult;
@@ -31,21 +32,19 @@ public class ResponsesProvider implements LlmProvider {
     @Override
     public ChatResult complete(ChatCall call, Credential credential, StreamSink sink) {
         var endpoint = call.model().endpoint();
-        var url = endpoint.urlFor(ApiFormat.RESPONSES);
-        var headers = LlmProvider.headers(endpoint, credential);
+        var authorization = RequestAuthorization.forEndpoint(endpoint, credential, ApiFormat.RESPONSES.path());
         var timeout = Duration.ofMillis(endpoint.timeoutMillis());
         var startedAt = System.nanoTime();
 
         if (!endpoint.stream()) {
-            var response = transport.post(url, headers, ResponsesWire.request(call, false), timeout);
-            assertNotFailed(response);
+            var response = transport.post(
+                    authorization, ResponsesWire.request(call, false), timeout, sink::cancelled);
             return ResponsesWire.parse(response, ChatCompletionsProvider.millisSince(startedAt));
         }
 
         var accumulator = new ResponsesWire.Accumulator();
         transport.postStreaming(
-                url,
-                headers,
+                authorization,
                 ResponsesWire.request(call, true),
                 timeout,
                 event -> {
@@ -54,18 +53,11 @@ public class ResponsesProvider implements LlmProvider {
                         sink.chunk(chunk);
                         sink.progress(accumulator.textSoFar().length());
                     }
+                    return ResponsesWire.isTerminal(event);
                 },
                 sink::cancelled);
         var response = accumulator.response();
-        assertNotFailed(response);
         return ResponsesWire.parse(response, ChatCompletionsProvider.millisSince(startedAt));
     }
 
-    private static void assertNotFailed(tools.jackson.databind.JsonNode response) {
-        if (!"failed".equals(response.path("status").asString(""))) {
-            return;
-        }
-        var message = response.path("error").path("message").asString("The Responses request failed");
-        throw new LlmFailure(LlmFailure.classify(400, message), message);
-    }
 }

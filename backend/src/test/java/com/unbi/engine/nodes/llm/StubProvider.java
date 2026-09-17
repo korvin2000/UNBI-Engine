@@ -42,6 +42,12 @@ final class StubProvider implements LlmProvider {
         return new StubProvider(call -> result(text, FinishReason.STOP), List.of());
     }
 
+    private static ChatResult result(String text, FinishReason reason) {
+        return new ChatResult(
+                text, reason, new TokenUsage(10, 5, 0, 0, 15), "stub/model", 3, -1, false, List.of());
+    }
+
+
     static StubProvider streaming(String... chunks) {
         return new StubProvider(
                 call -> result(String.join("", chunks), FinishReason.STOP), List.of(chunks));
@@ -55,6 +61,12 @@ final class StubProvider implements LlmProvider {
 
     static StubProvider truncating(String text) {
         return new StubProvider(call -> result(text, FinishReason.LENGTH), List.of());
+    }
+
+    static StubProvider emitsThenFails(String chunk) {
+        return new StubProvider(call -> {
+            throw new LlmFailure(LlmFailure.Kind.SERVER, "disconnect after output");
+        }, List.of(chunk));
     }
 
     /** Fails only the calls whose user prompt contains {@code needle}; echoes the rest. */
@@ -73,10 +85,6 @@ final class StubProvider implements LlmProvider {
                 call -> result(call.messages().getLast().text(), FinishReason.STOP), List.of());
     }
 
-    private static ChatResult result(String text, FinishReason reason) {
-        return new ChatResult(
-                text, reason, new TokenUsage(10, 5, 0, 0, 15), "stub/model", 3, -1, false, List.of());
-    }
 
     @Override
     public ApiFormat format() {

@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -121,6 +122,61 @@ class SettingsStoreTest {
         assertThat(home.resolve("presets/llm-prompt-summarise.json")).exists();
         assertThat(presets.find("llm-prompt-summarise")).isPresent();
         assertThat(storeAt(home).dataRoot()).isEqualTo(elsewhere);
+    }
+
+    @Test
+    void dataLeaseBlocksRelocationWithoutChangingTheCurrentRoot(@TempDir Path home, @TempDir Path elsewhere)
+            throws IOException {
+        var store = storeAt(home);
+        var data = new DataDirectory(store);
+
+        try (var lease = data.acquireLease()) {
+            assertThat(lease.root()).isEqualTo(home);
+            assertThatThrownBy(() -> store.relocate(SettingsStore.Target.DATA, elsewhere.toString(), false))
+                    .isInstanceOf(SettingsStore.DataBusyException.class)
+                    .hasMessageContaining("finish or cancel authentication");
+            assertThat(store.dataRoot()).isEqualTo(home);
+        }
+
+        store.relocate(SettingsStore.Target.DATA, elsewhere.toString(), false);
+        assertThat(store.dataRoot()).isEqualTo(elsewhere);
+    }
+
+    @Test
+    void relocationCopiesPrivateManagedCredentialPermissions(@TempDir Path home, @TempDir Path elsewhere)
+            throws IOException {
+        var store = storeAt(home);
+        var credentials = home.resolve("credentials");
+        Files.createDirectories(credentials.resolve("nested"));
+        Files.writeString(credentials.resolve("nested/session.json"), "secret");
+        Files.setPosixFilePermissions(credentials, PosixFilePermissions.fromString("rwx------"));
+        Files.setPosixFilePermissions(credentials.resolve("nested"), PosixFilePermissions.fromString("rwx------"));
+        Files.setPosixFilePermissions(
+                credentials.resolve("nested/session.json"), PosixFilePermissions.fromString("rw-------"));
+
+        store.relocate(SettingsStore.Target.DATA, elsewhere.toString(), true);
+
+        assertThat(Files.getPosixFilePermissions(elsewhere.resolve("credentials")))
+                .isEqualTo(PosixFilePermissions.fromString("rwx------"));
+        assertThat(Files.getPosixFilePermissions(elsewhere.resolve("credentials/nested")))
+                .isEqualTo(PosixFilePermissions.fromString("rwx------"));
+        assertThat(Files.getPosixFilePermissions(elsewhere.resolve("credentials/nested/session.json")))
+                .isEqualTo(PosixFilePermissions.fromString("rw-------"));
+    }
+
+    @Test
+    void relocationRefusesSymlinkedManagedCredentialFiles(@TempDir Path home, @TempDir Path elsewhere)
+            throws IOException {
+        var credentials = home.resolve("credentials");
+        Files.createDirectories(credentials);
+        Files.writeString(home.resolve("outside.json"), "outside");
+        Files.createSymbolicLink(credentials.resolve("session.json"), home.resolve("outside.json"));
+
+        assertThatThrownBy(() -> storeAt(home).relocate(SettingsStore.Target.DATA, elsewhere.toString(), true))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("must not contain symbolic links");
+        assertThat(storeAt(home).dataRoot()).isEqualTo(home);
+        assertThat(elsewhere.resolve("credentials/session.json")).doesNotExist();
     }
 
     @Test

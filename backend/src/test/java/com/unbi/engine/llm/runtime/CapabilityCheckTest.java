@@ -11,6 +11,7 @@ import com.unbi.engine.llm.spec.ChatCall;
 import com.unbi.engine.llm.spec.ChatMessage;
 import com.unbi.engine.llm.spec.LlmFailure;
 import com.unbi.engine.llm.spec.ModelSpec;
+import com.unbi.engine.llm.spec.EndpointSpec;
 import com.unbi.engine.llm.spec.ProviderRouting;
 import com.unbi.engine.llm.spec.ResponseFormat;
 import com.unbi.engine.llm.spec.SamplingParams;
@@ -216,6 +217,30 @@ class CapabilityCheckTest {
             assertThat(messages(call)).anySatisfy(message -> assertThat(message).contains("caps at 4096"));
             assertThat(call.effectiveMaxOutputTokens()).isEqualTo(4096);
         }
+        @Test
+        void codexReportsUnsupportedExplicitControls() {
+            var base = Fixtures.endpoint();
+            var endpoint = new EndpointSpec(
+                    base.id(), base.profile(), base.baseUrl(), base.authScheme(), base.credentialRef(),
+                    base.headers(), base.rate(), base.timeoutMillis(), true, base.cachedTokenMode(),
+                    base.responsesPromptCache(), ApiFormat.RESPONSES,
+                    EndpointSpec.ResponsesDialect.CODEX, base.apiKeyLocation(), base.apiKeyName());
+            var model = new ModelSpec(
+                    endpoint, "codex-model", ApiFormat.RESPONSES, java.util.Set.of(),
+                    new com.unbi.engine.llm.spec.Reasoning(
+                            com.unbi.engine.llm.spec.Reasoning.Dialect.REASONING_EFFORT,
+                            true, com.unbi.engine.llm.spec.Reasoning.Effort.HIGH, 0, true),
+                    WebSearchMode.NONE, new com.unbi.engine.llm.spec.Pricing(0, 0, -1, -1),
+                    0, 0, ModelSpec.MaxTokensParam.of("max_tokens"), SamplingParams.UNSET,
+                    ProviderRouting.NONE, List.of(), java.util.Map.of(
+                            "temperature", 0.4, "top_p", 0.8, "max_output_tokens", 32));
+            var found = messages(sampled(model, new SamplingParams(
+                    0.2, 0.7, null, null, null, null, null, List.of(), null)));
+            assertThat(found).anySatisfy(message -> assertThat(message).contains("temperature"));
+            assertThat(found).anySatisfy(message -> assertThat(message).contains("top_p"));
+            assertThat(found).anySatisfy(message -> assertThat(message).contains("max_output_tokens"));
+        }
+
     }
 
     @Nested

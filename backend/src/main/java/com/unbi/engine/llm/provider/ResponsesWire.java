@@ -12,6 +12,7 @@ import com.unbi.engine.llm.spec.ResponseFormat;
 import com.unbi.engine.llm.spec.SamplingParams;
 import com.unbi.engine.llm.spec.TokenUsage;
 import com.unbi.engine.llm.spec.WebSearchMode;
+import com.unbi.engine.llm.spec.LlmFailure;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
@@ -43,24 +44,53 @@ public final class ResponsesWire {
 
     public static ObjectNode request(ChatCall call, boolean stream) {
         var model = call.model();
+        var endpoint = model.endpoint();
+        endpoint.validateApiFormat(model.apiFormat());
+        if (endpoint.responsesDialect() == com.unbi.engine.llm.spec.EndpointSpec.ResponsesDialect.CODEX
+                && (!stream || !endpoint.stream())) {
+            throw new LlmFailure(LlmFailure.Kind.UNSUPPORTED,
+                    "The Codex Responses dialect requires streaming");
+        }
         var body = NODES.objectNode();
         body.put("model", model.name());
 
         var input = body.putArray("input");
+        var instructions = new StringBuilder();
         call.messages().stream()
                 .filter(message -> !message.isEmpty())
-                .forEach(message -> input.add(message(message, model.endpoint().responsesPromptCache())));
+                .forEach(message -> {
+                    if (endpoint.responsesDialect()
+                            == com.unbi.engine.llm.spec.EndpointSpec.ResponsesDialect.CODEX
+                            && message.role() == ChatMessage.Role.SYSTEM) {
+                        if (!message.attachments().isEmpty()) {
+                            throw new LlmFailure(LlmFailure.Kind.UNSUPPORTED,
+                                    "System message attachments are not supported by the Codex Responses dialect");
+                        }
+                        if (!instructions.isEmpty()) {
+                            instructions.append("\n\n");
+                        }
+                        instructions.append(message.text());
+                    } else {
+                        input.add(message(message, endpoint.responsesPromptCache()));
+                    }
+                });
 
         body.put("stream", stream);
         // Nothing here needs the provider to retain a conversation, and storing one is a privacy
         // decision this pack has no business taking on a user's behalf.
         body.put("store", false);
-        var outputLimit = call.effectiveMaxOutputTokens();
-        if (outputLimit > 0 && model.outputLimitField().isPresent()) {
-            body.put("max_output_tokens", outputLimit);
+        if (endpoint.responsesDialect() == com.unbi.engine.llm.spec.EndpointSpec.ResponsesDialect.CODEX) {
+            body.put("instructions", instructions.toString());
+        } else {
+            var outputLimit = call.effectiveMaxOutputTokens();
+            if (outputLimit > 0 && model.outputLimitField().isPresent()) {
+                body.put("max_output_tokens", outputLimit);
+            }
         }
 
-        sampling(body, call.sampling());
+        if (endpoint.responsesDialect() != com.unbi.engine.llm.spec.EndpointSpec.ResponsesDialect.CODEX) {
+            sampling(body, call.sampling());
+        }
 
         var format = textFormat(call.responseFormat(), model);
         if (format != null) {
@@ -77,24 +107,55 @@ public final class ResponsesWire {
             }
             body.putArray("tools").add(tool);
             body.put("tool_choice", call.webSearch().required() ? "required" : "auto");
-            // Without this the search call comes back with no sources, and "did it search?" becomes
-            // unanswerable from the response alone.
             body.putArray("include").add("web_search_call.action.sources");
         }
-        if (model.endpoint().responsesPromptCache() && !call.cacheKey().isBlank()) {
+        if (endpoint.responsesPromptCache() && !call.cacheKey().isBlank()) {
             body.put("prompt_cache_key", call.cacheKey());
         }
         var routing = ChatWire.provider(model.routing());
         if (routing != null) {
             body.set("provider", routing);
         }
-        model.extraBody().forEach((key, value) -> body.set(key, ChatWire.JsonValue.of(value)));
+        mergeExtraBody(body, model.extraBody(), endpoint.responsesDialect(), model.name(), stream,
+                endpoint.responsesDialect() == com.unbi.engine.llm.spec.EndpointSpec.ResponsesDialect.CODEX
+                        ? instructions.toString() : null);
         return body;
+    }
+
+    private static void mergeExtraBody(
+            ObjectNode body,
+            java.util.Map<String, Object> extra,
+            com.unbi.engine.llm.spec.EndpointSpec.ResponsesDialect dialect,
+            String model,
+            boolean stream,
+            String instructions) {
+        extra.forEach((key, value) -> {
+            var replacement = ChatWire.JsonValue.of(value);
+            if (key.equals("model") && (!replacement.isTextual() || !model.equals(replacement.asString()))) {
+                throw new IllegalArgumentException("Extra Request Body cannot override the model");
+            }
+            if (key.equals("stream") && (!replacement.isBoolean() || stream != replacement.asBoolean())) {
+                throw new IllegalArgumentException("Extra Request Body cannot override streaming");
+            }
+            if (dialect == com.unbi.engine.llm.spec.EndpointSpec.ResponsesDialect.CODEX) {
+                if (key.equals("temperature") || key.equals("top_p") || key.equals("max_output_tokens")) {
+                    return;
+                }
+                if (key.equals("store") && (!replacement.isBoolean() || replacement.asBoolean())) {
+                    throw new IllegalArgumentException("The Codex Responses dialect requires store=false");
+                }
+                if (key.equals("instructions")
+                        && (!replacement.isTextual() || !instructions.equals(replacement.asString()))) {
+                    throw new IllegalArgumentException("Extra Request Body cannot override Codex instructions");
+                }
+            }
+            body.set(key, replacement);
+        });
     }
 
     public static ObjectNode message(ChatMessage message, boolean explicitCacheControls) {
         var node = NODES.objectNode();
-        // Responses renames the system role and rejects the old spelling.
+        // Standard Responses uses the documented developer spelling for system messages.
         node.put("role", message.role() == ChatMessage.Role.SYSTEM ? "developer" : message.role().wireName());
         var content = node.putArray("content");
         if (!message.text().isBlank()) {
@@ -122,6 +183,7 @@ public final class ResponsesWire {
                     .put("file_data", attachment.dataUrl());
         };
     }
+
 
     /**
      * Only the samplers this API accepts.
@@ -160,11 +222,10 @@ public final class ResponsesWire {
     }
 
     /**
-     * The Responses spelling of the same reasoning intent — but only for the dialects that have one.
+     * The Responses spelling of the same reasoning intent.
      *
-     * <p>Budgeted thinking has no analogue here, and emitting an effort in its place would look like
-     * it worked while asking for something else. A target that needs it says so through its extra
-     * body, where what goes on the wire is visible in the node.
+     * <p>Responses carries only the effort field. Chat/OpenRouter-only max_tokens and exclude
+     * controls are intentionally not projected into this dialect.
      */
     public static ObjectNode reasoning(Reasoning reasoning) {
         if (reasoning.dialect() != Reasoning.Dialect.REASONING_EFFORT
@@ -174,19 +235,30 @@ public final class ResponsesWire {
         if (!reasoning.enabled()) {
             return NODES.objectNode().put("effort", "none");
         }
-        var node = NODES.objectNode().put("effort", reasoning.effort().wireName());
-        if (reasoning.dialect() == Reasoning.Dialect.REASONING) {
-            if (reasoning.maxTokens() > 0) {
-                node.put("max_tokens", reasoning.maxTokens());
-            }
-            node.put("exclude", reasoning.exclude());
-        }
-        return node;
+        return NODES.objectNode().put("effort", reasoning.effort().wireName());
     }
 
     // --- Response -----------------------------------------------------------
 
     public static ChatResult parse(JsonNode response, long latencyMillis) {
+        requireObject(response, "The Responses response was not an object");
+        if (response.hasNonNull("error")) throwIfFailed(response);
+        var status = response.path("status").asString("");
+        switch (status) {
+            case "completed", "incomplete" -> {
+                if (!response.path("output").isArray()) {
+                    throw responseFormat("The Responses response did not contain output");
+                }
+            }
+            case "failed" -> throwIfFailed(response);
+            default -> throw responseFormat("The Responses response had no terminal status");
+        }
+        throwIfUnsupportedOutput(response);
+        var finish = finishReason(response);
+        if (finish == FinishReason.CONTENT_FILTER)
+            throw new LlmFailure(LlmFailure.Kind.CONTENT_FILTER, "The Responses request was refused");
+        if (status.equals("incomplete") && finish != FinishReason.LENGTH)
+            throw responseFormat("The Responses request did not complete");
         var searchCalls = outputsOfType(response, "web_search_call");
         return new ChatResult(
                 text(response),
@@ -252,11 +324,9 @@ public final class ResponsesWire {
     /**
      * Reassembles a streamed Responses call.
      *
-     * <p>Every terminal event carries the whole response object, so the work is catching all three
-     * of them. {@code response.incomplete} is the easiest to forget and the most expensive to miss:
-     * it is how a call that hit its output ceiling ends, and it carries both the usage block and the
-     * truncation reason. Dropping it bills a long answer as zero and classifies the cut as a parse
-     * failure — which is retryable, so the identical cut gets bought again on every attempt.
+     * <p>Every terminal event carries the whole response object. A stream without one is not a
+     * successful incomplete answer: the connection may have been truncated before the provider
+     * recorded usage or a finish state.
      */
     public static final class Accumulator {
 
@@ -265,35 +335,85 @@ public final class ResponsesWire {
 
         /** @return the text added by this event */
         public String accept(JsonNode event) {
+            requireObject(event, "The Responses stream event was not an object");
             var type = event.path("type").asString("");
+            if (type.equals("error") || event.hasNonNull("error")) throwIfFailed(event);
+            if (type.startsWith("response.refusal."))
+                throw new LlmFailure(LlmFailure.Kind.CONTENT_FILTER, "The Responses request was refused");
             if (type.equals("response.output_text.delta")) {
-                var delta = event.path("delta").asString("");
-                text.append(delta);
-                return delta;
+                var delta = event.path("delta");
+                if (!delta.isString()) {
+                    throw responseFormat("The Responses text delta was not text");
+                }
+                var value = delta.asString("");
+                text.append(value);
+                return value;
             }
-            if (TERMINAL_EVENTS.contains(type) && event.path("response").isObject()) {
+            if (isTerminal(type)) {
+                if (!event.path("response").isObject()) {
+                    throw responseFormat("The Responses terminal event did not contain a response");
+                }
                 terminal = event.path("response");
             }
             return "";
         }
 
         public JsonNode response() {
-            if (terminal != null) {
-                return terminal;
+            if (terminal == null) {
+                throw responseFormat("The Responses stream ended before a terminal response");
             }
-            // A stream that ended with no terminal event at all can only carry its text, so it says
-            // incomplete rather than claiming a clean stop it never saw.
-            var node = NODES.objectNode().put("status", "incomplete");
-            var content = NODES.objectNode().put("type", "output_text").put("text", text.toString());
-            var message = NODES.objectNode().put("type", "message");
-            message.putArray("content").add(content);
-            node.putArray("output").add(message);
-            return node;
+            return terminal;
         }
 
         public String textSoFar() {
             return text.toString();
         }
+    }
+
+    static boolean isTerminal(JsonNode event) {
+        return event != null && isTerminal(event.path("type").asString(""));
+    }
+
+    private static boolean isTerminal(String type) {
+        return type.equals("response.completed") || type.equals("response.incomplete") || type.equals("response.failed");
+    }
+
+    private static void throwIfFailed(JsonNode response) {
+        var error = response.path("type").asString("").equals("error") ? response : response.path("error");
+        var code = error.path("code").asString(error.path("type").asString(""));
+        var kind = LlmFailure.classify(400, code);
+        throw new LlmFailure(kind, "The Responses request failed");
+    }
+    private static void requireObject(JsonNode node, String message) {
+        if (node == null || !node.isObject()) {
+            throw responseFormat(message);
+        }
+    }
+
+
+    private static void throwIfUnsupportedOutput(JsonNode response) {
+        response.path("output").forEach(item -> {
+            var type = item.path("type").asString("");
+            if (type.equals("refusal") || item.path("refusal").isString()
+                    || java.util.stream.StreamSupport.stream(item.path("content").spliterator(), false)
+                            .anyMatch(part -> part.path("type").asString("").equals("refusal"))) {
+                throw new com.unbi.engine.llm.spec.LlmFailure(
+                        com.unbi.engine.llm.spec.LlmFailure.Kind.CONTENT_FILTER,
+                        "The Responses request was refused");
+            }
+            if (type.equals("function_call")
+                    || type.equals("computer_call")
+                    || type.equals("tool_call")
+                    || type.equals("custom_tool_call")) {
+                throw new com.unbi.engine.llm.spec.LlmFailure(
+                        com.unbi.engine.llm.spec.LlmFailure.Kind.UNSUPPORTED,
+                        "The Responses response requested a tool call, but this engine has no tool loop");
+            }
+        });
+    }
+
+    private static LlmFailure responseFormat(String message) {
+        return new LlmFailure(LlmFailure.Kind.RESPONSE_FORMAT, message);
     }
 
     private static List<JsonNode> outputsOfType(JsonNode response, String type) {

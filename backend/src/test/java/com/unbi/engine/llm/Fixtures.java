@@ -95,10 +95,7 @@ public final class Fixtures {
     }
 
     public static EndpointSpec endpoint() {
-        return new EndpointSpec(
-                "test", "custom", "https://gateway.test/v1", EndpointSpec.AuthScheme.BEARER, "key",
-                Map.of(), RatePolicy.UNLIMITED, 30_000, false,
-                TokenUsage.CachedTokenMode.INCLUDED, false);
+        return new EndpointSpec("test", "custom", "https://gateway.test/v1", EndpointSpec.AuthScheme.BEARER, "key", Map.of(), RatePolicy.UNLIMITED, 30_000, false, TokenUsage.CachedTokenMode.INCLUDED, false, ApiFormat.CHAT_COMPLETIONS, EndpointSpec.ResponsesDialect.STANDARD, "header", "");
     }
 
     public static ModelSpec model() {
@@ -109,7 +106,7 @@ public final class Fixtures {
         return new ModelSpec(
                 endpoint,
                 "vendor/model-1",
-                ApiFormat.CHAT_COMPLETIONS,
+                endpoint.defaultApiFormat(),
                 Set.of(),
                 Reasoning.UNSPECIFIED,
                 WebSearchMode.NONE,
@@ -125,10 +122,7 @@ public final class Fixtures {
 
     /** An endpoint configured as the OpenRouter gateway kind, for the calls that kind implies. */
     public static EndpointSpec openrouter() {
-        return new EndpointSpec(
-                "or", "openrouter", "https://openrouter.ai/api/v1", EndpointSpec.AuthScheme.BEARER,
-                "openrouter", Map.of(), RatePolicy.UNLIMITED, 30_000, true,
-                TokenUsage.CachedTokenMode.INCLUDED, false);
+        return new EndpointSpec("or", "openrouter", "https://openrouter.ai/api/v1", EndpointSpec.AuthScheme.BEARER, "openrouter", Map.of(), RatePolicy.UNLIMITED, 30_000, true, TokenUsage.CachedTokenMode.INCLUDED, false, ApiFormat.CHAT_COMPLETIONS, EndpointSpec.ResponsesDialect.STANDARD, "header", "");
     }
 
     public static ModelSpec named(ModelSpec base, String name) {

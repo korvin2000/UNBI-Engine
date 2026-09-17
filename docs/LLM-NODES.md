@@ -23,12 +23,13 @@ llm/                          the subsystem — no NodeDefinition lives here
               the typed contract between a node and a provider
   provider/   LlmProvider SPI + the two wire formats (chat completions, responses)
               + SSE reader + HTTP transport
-  auth/       CredentialStore, CredentialSource, the Codex source
+ auth/       CredentialStore, source-owned renewal, managed credential storage, generic OAuth and native ChatGPT authentication
   discovery/  GatewayDirectory + ModelListingReader + EndpointFacts + ModelFacts +
               Amounts (formatting) + TimeBudget + OptionalFetch + ModelEndpointPath —
               asking a gateway about itself, as pure functions of the bodies it returns
   runtime/    RequestPacer (rpm · spacing · concurrency), CapabilityCheck, LlmCaller
   prompt/     PromptTemplate
+  openapi/    bounded OpenAPI 3.0–3.2 endpoint/server/security metadata import
 nodes/llm/    LlmTypes + one class per node + EndpointProfiles (the endpoint profile schema)
               + RequestPlan (which requests one node makes)
 profiles/     named, engine-side configurations referenced by id — generic, not LLM-specific
@@ -144,29 +145,39 @@ resolved at call time from a `CredentialStore` fed by ordered sources:
 |---|---|---|
 | environment | `UNBI_LLM_KEY_<NAME>` | any |
 | file | `credentials.properties` under the engine's data directory | any |
-| codex | `CODEX_AUTH_JSON`, else `~/.codex/auth.json` | `codex` |
+| managed | private `credentials/<name>.json` under the data directory | basic, OAuth and managed Codex references |
+| external Codex | `CODEX_AUTH_JSON`, `$CODEX_HOME/auth.json`, else `~/.codex/auth.json` | `codex`, unless a managed definition owns it |
 
-`GET /api/credentials` returns credential **names only**, so the editor can offer a dropdown without
-the browser ever holding a key; there is no endpoint that could return a value, and
-`Credential.toString()` redacts. A missing reference fails the node — and the test button — with the
-name it looked for and every place it looked, which is the one error message in this subsystem that
-always has to be actionable. The gateway's own 401 is not it, so the directory refuses to probe with
-a name it cannot resolve rather than reporting whatever the gateway says about a missing header.
+`GET /api/credentials` returns names and public type/source/status/expiry metadata, never secrets.
+The shared credential editor opens from Settings or an endpoint's credential widget. It supports
+write-only API keys, username/password, gateway OAuth and ChatGPT/Codex. API keys remain in
+`credentials.properties`; managed definitions and sessions use private atomic files. Environment
+and external Codex sources are read-only.
 
-A key can also be *added* from the editor: the credential widget in the endpoint profile dialog
-posts a name and a value once to `POST /api/credentials`, which writes it into
-`credentials.properties` on the engine. It is never read back — from that moment it is a name in a
-dropdown, exactly as a key set in the environment is. Only the file source is writable from there;
-a variable in the engine's environment is the deployment's decision.
+Managed credentials are bound to an explicit endpoint base URL. OAuth supports authorization code
+with PKCE, client credentials and device authorization. Supply a registered client ID and the
+provider's token authentication method; metadata discovery previews endpoints but never invents a
+registration. Register the callback URI shown in the editor. For remote deployments set
+`unbi.llm.oauth.callback-base-url` to the externally reachable trusted engine origin.
+
+Generation and discovery resolve credentials after pacing, renew near expiry, and allow one
+source-owned refresh/replay after a pre-output HTTP 401. A 403, static key, rejected refresh token,
+or already-emitted output never starts a refresh/retry loop. Renewal persists rotated tokens before
+publishing them. Closing the editor does not log out; Disconnect clears the managed session.
+
+Sensitive settings bundles can include connection definitions and write-only configured secrets,
+but never reusable OAuth sessions or native Codex tokens. Reconnect after importing a backup.
+Data relocation refuses with HTTP 409 while authentication holds a data lease; finish or cancel
+that operation, then retry.
 
 ## 3b. Endpoint profiles
 
-**A base URL never lives in a workflow file, and never in the code.** The first is wrong the moment
-the file moves machines; the second was measured producing exactly one outcome — `Connection
-refused` against a `localhost` nobody was running — on every machine but the author's. So the
-address lives in an **endpoint profile**: a named configuration saved on the engine under
+**A base URL never lives in a workflow file.** Ordinary gateway addresses live in an **endpoint
+profile** rather than in code: a named configuration saved on the engine under
 `profiles/llm.endpoint/<id>.json`, holding the gateway kind, the base URL, authentication, the
-credential *name*, streaming, timeout, pacing and extra headers. The Endpoint node holds the
+credential *name*, streaming, timeout, pacing and extra headers. The native ChatGPT/Codex gateway is
+the deliberate exception: when its profile base is blank, the engine supplies the official native
+ChatGPT endpoint; an explicit nonblank profile value still wins. The Endpoint node holds the
 profile's id and nothing else. A workflow that says "openrouter" runs unchanged wherever a profile
 called openrouter exists, and points at whatever that machine means by it.
 
@@ -184,21 +195,52 @@ request check cannot disagree about which URL, which credential or which headers
 
 The gateway **kind** (`openrouter`, `llamacpp`, `omniroute`, `openai`, `codex`, `custom`) is a field
 of the profile. It carries what genuinely differs between gateways on the wire — auth scheme, probe
-path, preferred wire format, cached-token accounting, a pacing default, a note — and no address.
+path, preferred wire format, cached-token accounting, a pacing default and a note. Most kinds have no
+address; `codex` also carries the deliberate native ChatGPT endpoint default described above.
 
-### Codex, honestly
+### ChatGPT Plus/Pro and Codex, honestly
 
-Codex's OAuth client id, authorize and token endpoints are not public API. Rather than guess them,
-this pack **reads the credentials the `codex` CLI already wrote** (`~/.codex/auth.json`, documented,
-stable, and auto-refreshed by that CLI while it is in use) and sends them as
-`Authorization: Bearer …` plus `chatgpt-account-id`, `originator` and `OpenAI-Beta` against a
-**configurable** base URL — configurable because that URL has moved at least once. An expired token
-fails with "run `codex login`", which is the true remedy.
+ChatGPT subscription sign-in is native to UNBI — it does not require a Codex executable or a shell
+command. A new ChatGPT/Codex credential defaults its allowed resource base
+to `https://chatgpt.com/backend-api/codex`; keep that value unless a deliberately configured gateway
+uses another compatible base. Choose **Browser sign-in** for a local engine: the native browser flow
+returns to `http://localhost:1455/auth/callback`. For a remote engine, choose **Device sign-in** and
+complete the displayed verification flow on a device that can reach ChatGPT.
 
-The seam for a first-party flow is `CredentialSource`: a future device-code or PKCE implementation
-is one more bean, and nothing else changes. That is also where a Claude SDK / Claude Code MCP
-credential would attach — *credential acquisition* and *what an integration exposes* are separate
-questions, and only the first one is settled here.
+This native provider protocol is compatibility-sensitive: it uses the ChatGPT/Codex client protocol,
+not the general OpenAI Platform API, and live account authorization remains the operator's
+responsibility. Managed connections created by an older broker-based build do not silently copy or
+reuse their old tokens: reconnect them explicitly in UNBI. The old connection definition may remain
+visible so it can be reviewed, but it is not proof of a ready native session.
+
+External Codex CLI credentials remain explicitly externally managed and read-only: UNBI may read them
+for a configured external reference, but never copies, refreshes or logs out that CLI account.
+**Connect in UNBI** establishes an independent managed session; logging out that session cannot
+silently reactivate an external account.
+
+Codex wire behavior is separate from authentication: the built-in ChatGPT/Codex gateway requires the
+Codex Responses dialect, Responses protocol and streaming. It sends `store:false` and `instructions`,
+and reports unsupported sampling or output limits through the existing capability policy. OpenAI Platform
+API keys and ChatGPT subscriptions are separate authentication and billing surfaces.
+
+### OpenAPI endpoint configuration import
+
+In an endpoint profile, expand **OpenAPI endpoint configuration import (3.0–3.2)**. Paste JSON/YAML
+or upload a file, supplying a document base URL for relative URLs. Preview and review the operation,
+server variables, complete security alternative and changed fields before **Apply to draft**.
+The import does not save a profile, create credentials, fetch remote references, execute operations,
+or introduce HTTP/tool nodes. Configure the suggested credential separately, Test, then Save.
+
+Operation/path/root precedence, local references and supported security alternatives are preserved.
+Unsupported AND combinations, external consumed references, mutual TLS and insecure OAuth grants
+remain unavailable with reasons, never silently anonymous. Documents are bounded to 10 MiB and
+depth 100 with bounded YAML aliases. Protocol must be selected explicitly when no recognized
+generation operation exists. Applying a patch clears the old credential reference while preserving
+unrelated name, headers and pacing settings.
+
+Protocol precedence is explicit Model override → endpoint format → gateway default. Chat Completions
+and Responses remain supported. SSE framing, terminal-state checks and whole-body deadlines apply
+to both; cancellation closes stalled bodies, and no generation retry follows visible output.
 
 ## 4. Providers: quirks are data
 

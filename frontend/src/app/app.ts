@@ -22,6 +22,7 @@ import { ProfileDialog } from './shared/profile-dialog/profile-dialog';
 import { ProfileService } from './core/profiles/profile.service';
 import { CredentialService } from './core/credentials/credential.service';
 import { SettingsDialog } from './shared/settings-dialog/settings-dialog';
+import { CredentialDialog } from './shared/credential-dialog/credential-dialog';
 import { TextEditor } from './shared/text-editor/text-editor';
 import { TextEditorService } from './shared/text-editor/text-editor.service';
 import { WorkflowLibrary } from './shared/workflow-library/workflow-library';
@@ -43,6 +44,7 @@ import { WorkflowLibrary } from './shared/workflow-library/workflow-library';
     FileBrowser,
     PresetDialog,
     ProfileDialog,
+    CredentialDialog,
     TextEditor,
     SettingsDialog,
     WorkflowLibrary,
@@ -96,6 +98,7 @@ export class App implements OnInit {
       this.browser.open() !== null ||
       this.presets.pending() !== null ||
       this.profiles.editing() !== null ||
+      this.credentials.editing() !== null ||
       this.textEditor.open() !== null ||
       this.settings.open() !== null ||
       this.library.open() !== null

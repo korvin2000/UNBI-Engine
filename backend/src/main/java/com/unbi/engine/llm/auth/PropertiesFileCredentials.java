@@ -35,16 +35,19 @@ public class PropertiesFileCredentials implements CredentialSource {
 
     private static final Logger log = LoggerFactory.getLogger(PropertiesFileCredentials.class);
 
-    private final Supplier<Path> file;
+    private final DataDirectory data;
+    private final String fileName;
 
     @Autowired
     public PropertiesFileCredentials(DataDirectory data) {
-        this.file = () -> data.file(FILE_NAME);
+        this.data = data;
+        this.fileName = FILE_NAME;
     }
 
     /** Package-private: the test seam, and the reason the constructor above is annotated. */
     PropertiesFileCredentials(Path file) {
-        this.file = () -> file;
+        this.data = new DataDirectory(file.toAbsolutePath().getParent());
+        this.fileName = file.getFileName().toString();
     }
 
     @Override
@@ -82,7 +85,7 @@ public class PropertiesFileCredentials implements CredentialSource {
 
     /** Where a user should put the file, for the message shown when a reference is not found. */
     public Path location() {
-        return file.get();
+        return data.file(fileName);
     }
 
     /**
@@ -92,35 +95,48 @@ public class PropertiesFileCredentials implements CredentialSource {
      * character the format escapes is read back as what was typed. The file is the user's own and
      * stays hand-editable; this only ever changes the one line it was asked about.
      */
-    public synchronized void store(String name, String value) throws IOException {
-        var properties = load();
-        properties.setProperty(name.trim(), value);
-        write(properties);
+    public void store(String name, String value) throws IOException {
+        if (name == null || !name.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,60}"))
+            throw new IllegalArgumentException("Invalid credential name");
+        if (value == null || value.isBlank()) throw new IllegalArgumentException("The key is empty");
+        try (var lease = data.acquireLease()) {
+            synchronized (this) {
+                var target = lease.root().resolve(fileName);
+                var properties = load(target);
+                properties.setProperty(name, value);
+                write(properties, target);
+            }
+        }
     }
 
     /** @return false when there was no such key in the file */
-    public synchronized boolean remove(String name) throws IOException {
-        var properties = load();
-        if (properties.remove(name == null ? "" : name.trim()) == null) {
-            return false;
+    public boolean remove(String name) throws IOException {
+        ManagedCredentialStore.validateName(name);
+        try (var lease = data.acquireLease()) {
+            synchronized (this) {
+                var target = lease.root().resolve(fileName);
+                var properties = load(target);
+                if (properties.remove(name) == null) return false;
+                write(properties, target);
+                return true;
+            }
         }
-        write(properties);
-        return true;
     }
 
-    private void write(Properties properties) throws IOException {
-        var file = location();
-        if (file.getParent() != null) {
-            Files.createDirectories(file.getParent());
-        }
-        try (var writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-            properties.store(writer, "UNBI-Engine credentials — one key per line, by name. Never share this file.");
-        }
+    private void write(Properties properties, Path target) throws IOException {
+        var writer = new java.io.StringWriter();
+        properties.store(writer, "UNBI-Engine credentials — one key per line, by name. Never share this file.");
+        SecretFiles.write(target, writer.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     private Properties load() {
+        try (var lease = data.acquireLease()) {
+            return load(lease.root().resolve(fileName));
+        }
+    }
+
+    private Properties load(Path file) {
         var properties = new Properties();
-        var file = location();
         if (!Files.isRegularFile(file)) {
             return properties;
         }
@@ -129,10 +145,10 @@ public class PropertiesFileCredentials implements CredentialSource {
         } catch (IOException | IllegalArgumentException unreadable) {
             // A malformed credentials file must not take the engine down: every other source still
             // works, and the node that needed this one says so by name.
-            log.warn("Could not read {}: {}", file, unreadable.getMessage());
+            log.warn("Could not read credential file {}", file);
             return new Properties();
         } catch (UncheckedIOException unreadable) {
-            log.warn("Could not read {}: {}", file, unreadable.getMessage());
+            log.warn("Could not read credential file {}", file);
             return new Properties();
         }
         return properties;

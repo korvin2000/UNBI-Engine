@@ -1,0 +1,32 @@
+openapi: 3.2.1
+info: {title: Gateway, version: '1'}
+servers:
+  - url: https://gateway.example/{version}
+    variables:
+      version:
+        default: v1
+        enum: [v1, v2]
+paths:
+  /responses:
+    post:
+      responses:
+        '200': {description: ok}
+security:
+  - gatewayOAuth: [inference.write]
+components:
+  schemas:
+    Unrelated:
+      $ref: https://schemas.example/unused.json
+  securitySchemes:
+    gatewayOAuth:
+      type: oauth2
+      x-clientId: ignored-client-id
+      x-clientSecret: ignored-client-secret
+      flows:
+        authorizationCode:
+          authorizationUrl: https://issuer.example/authorize
+          tokenUrl: https://issuer.example/token
+          refreshUrl: https://issuer.example/refresh
+          scopes:
+            inference.write: Generate responses
+            administration: Not requested
